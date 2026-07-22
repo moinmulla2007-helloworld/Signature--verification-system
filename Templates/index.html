@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signature Verification System</title>
+    <!-- Modern Font: Plus Jakarta Sans -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="bg-glow glow-1"></div>
+    <div class="bg-glow glow-2"></div>
+
+    <div class="container">
+        <header class="app-header">
+            <div class="logo-icon">
+                <i class="fa-solid fa-signature"></i>
+            </div>
+            <h1>Signature AI Verification</h1>
+            <p>Upload a reference and test signature to analyze structural similarity with Siamese Neural Networks.</p>
+        </header>
+
+        <form action="/verify" method="POST" enctype="multipart/form-data" class="upload-form" id="verifyForm">
+            <div class="upload-grid">
+                
+                <!-- Box 1: Reference Signature -->
+                <div class="upload-card">
+                    <div class="card-header">
+                        <span class="badge blue"><i class="fa-solid fa-shield-halved"></i> Ground Truth</span>
+                        <h3>Reference Signature</h3>
+                    </div>
+                    <div class="drop-zone" id="dropRef">
+                        <input type="file" id="refImg" name="ref_img" accept="image/*" required hidden>
+                        <div class="drop-content" id="contentRef">
+                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                            <p class="primary-text">Drag & drop image or <span>browse</span></p>
+                            <p class="secondary-text">Supports PNG, JPG, or JPEG</p>
+                        </div>
+                        <div class="preview-wrapper hidden" id="wrapperRef">
+                            <img id="prevRef" class="preview-img" alt="Reference Preview">
+                            <button type="button" class="btn-remove" onclick="removeImage(event, 'refImg', 'contentRef', 'wrapperRef')">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Box 2: Test Signature -->
+                <div class="upload-card">
+                    <div class="card-header">
+                        <span class="badge purple"><i class="fa-solid fa-magnifying-glass"></i> Sample Target</span>
+                        <h3>Test Signature</h3>
+                    </div>
+                    <div class="drop-zone" id="dropTest">
+                        <input type="file" id="testImg" name="test_img" accept="image/*" required hidden>
+                        <div class="drop-content" id="contentTest">
+                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                            <p class="primary-text">Drag & drop image or <span>browse</span></p>
+                            <p class="secondary-text">Supports PNG, JPG, or JPEG</p>
+                        </div>
+                        <div class="preview-wrapper hidden" id="wrapperTest">
+                            <img id="prevTest" class="preview-img" alt="Test Preview">
+                            <button type="button" class="btn-remove" onclick="removeImage(event, 'testImg', 'contentTest', 'wrapperTest')">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="action-section">
+                <button type="submit" class="btn-submit" id="submitBtn">
+                    <span><i class="fa-solid fa-bolt"></i> Verify Signatures</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function setupInteractiveDrop(dropId, inputId, contentId, wrapperId, previewId) {
+            const dropZone = document.getElementById(dropId);
+            const input = document.getElementById(inputId);
+            const content = document.getElementById(contentId);
+            const wrapper = document.getElementById(wrapperId);
+            const preview = document.getElementById(previewId);
+
+            dropZone.addEventListener('click', () => input.click());
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('drag-active');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('drag-active');
+                });
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length) {
+                    input.files = files;
+                    handleFileSelect(files[0], content, wrapper, preview);
+                }
+            });
+
+            input.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    handleFileSelect(e.target.files[0], content, wrapper, preview);
+                }
+            });
+        }
+
+        function handleFileSelect(file, content, wrapper, preview) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                content.classList.add('hidden');
+                wrapper.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeImage(event, inputId, contentId, wrapperId) {
+            event.stopPropagation();
+            document.getElementById(inputId).value = '';
+            document.getElementById(contentId).classList.remove('hidden');
+            document.getElementById(wrapperId).classList.add('hidden');
+        }
+
+        setupInteractiveDrop('dropRef', 'refImg', 'contentRef', 'wrapperRef', 'prevRef');
+        setupInteractiveDrop('dropTest', 'testImg', 'contentTest', 'wrapperTest', 'prevTest');
+
+        document.getElementById('verifyForm').addEventListener('submit', function() {
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = '<span><i class="fa-solid fa-spinner fa-spin"></i> Processing Neural Embeddings...</span>';
+            btn.classList.add('loading');
+        });
+    </script>
+</body>
+</html>
