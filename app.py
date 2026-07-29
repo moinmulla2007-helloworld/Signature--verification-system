@@ -26,56 +26,106 @@ if os.path.exists(model_path):
 else:
     print(f"Warning: {model_path} not found. Run train_siamese.py first.")
 
+def load_and_standardize(path):
+    """
+    Bulletproof Standardizer: Forces every image into pure binary (Black Ink on White Background).
+    Directly extracts strokes from web canvas alpha channels to prevent ink deletion.
+    """
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None: return None
+
+    # 1. Handle Web Canvas (Transparent Background)
+    if len(img.shape) == 3 and img.shape[2] == 4:
+        alpha = img[:, :, 3]
+        # Create a pure white background
+        binary = np.ones(alpha.shape, dtype=np.uint8) * 255 
+        # Wherever the user drew ink (alpha > 0), make it pure black
+        binary[alpha > 0] = 0 
+        return binary
+
+    # 2. Handle Uploaded Images (No Transparency)
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # 3. Handle Dark Mode Uploads (Light ink on dark background)
+    if np.median(img) < 127:
+        img = cv2.bitwise_not(img)
+
+    # 4. Force strict Black & White (Otsu's Thresholding)
+    _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary
+
 def preprocess_image(path):
-    """Prepares image for the Siamese Neural Network (128x128 binary)."""
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    """
+    Prepares image for Siamese Network.
+    Reverted to the 'Squashed' format to match the original training data, 
+    but keeps the transparent/dark mode fixes.
+    """
+    img = load_and_standardize(path)
     if img is None:
         return None
-    img = cv2.resize(img, (128, 128))
-    img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    img = img.astype("float32") / 255.0
-    img = np.expand_dims(img, axis=-1)
-    return np.expand_dims(img, axis=0)
 
-def crop_to_signature(img_gray):
-    """Auxiliary helper to crop white-space padding and align signatures."""
-    _, thresh = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    coords = cv2.findNonZero(thresh)
-    if coords is None:
-        return thresh
-    x, y, w, h = cv2.boundingRect(coords)
-    return thresh[y:y+h, x:x+w]
+    # Invert to White Ink on Black Background for the neural network
+    img = cv2.bitwise_not(img)
+    
+    # DO NOT CROP OR PAD. 
+    # Squash directly to 128x128 exactly like the model was originally trained.
+    img = cv2.resize(img, (128, 128), interpolation=cv2.INTER_AREA)
+
+    # --- DEBUGGING STEP ---
+    # Save a physical copy of what the AI is actually analyzing
+    # Check your static/uploads folder for files starting with 'DEBUG_AI_'
+    debug_filename = f"DEBUG_AI_{os.path.basename(path)}"
+    debug_path = os.path.join(app.config['UPLOAD_FOLDER'], debug_filename)
+    cv2.imwrite(debug_path, img)
+    # ----------------------
+
+    # Normalize for the neural network
+    img = img.astype("float32") / 255.0
+    return np.expand_dims(np.expand_dims(img, axis=-1), axis=0)
+
+def crop_to_signature(img_binary_inv):
+    """Simplified cropper: Assumes image is already White Ink on Black Bg."""
+    coords = cv2.findNonZero(img_binary_inv)
+    if coords is not None:
+        x, y, w, h = cv2.boundingRect(coords)
+        return img_binary_inv[y:y+h, x:x+w]
+    return img_binary_inv
 
 def generate_diff_heatmap(ref_path, test_path, output_path):
-    """
-    High-Precision Forensic Map:
-    - Auto-crops signatures to align stroke bounding boxes
-    - Renders at High-Res (512x256)
-    - GREEN: Matching stroke structure
-    - RED: Structural deviations / Forgeries
-    """
-    raw_a = cv2.imread(ref_path, cv2.IMREAD_GRAYSCALE)
-    raw_b = cv2.imread(test_path, cv2.IMREAD_GRAYSCALE)
+    """Generates XAI Map utilizing the foolproof standardizer."""
+    raw_a = load_and_standardize(ref_path)
+    raw_b = load_and_standardize(test_path)
 
     if raw_a is None or raw_b is None:
         return
+
+    # Invert to White Ink on Black Background for heatmap logic
+    raw_a = cv2.bitwise_not(raw_a)
+    raw_b = cv2.bitwise_not(raw_b)
 
     crop_a = crop_to_signature(raw_a)
     crop_b = crop_to_signature(raw_b)
 
     target_w, target_h = 512, 256
-    sig_a = cv2.resize(crop_a, (target_w, target_h), interpolation=cv2.INTER_AREA)
-    sig_b = cv2.resize(crop_b, (target_w, target_h), interpolation=cv2.INTER_AREA)
+    
+    # Failsafe for empty cropped arrays
+    if crop_a.size == 0 or crop_b.size == 0:
+        return
+        
+    sig_a = cv2.resize(crop_a, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
+    sig_b = cv2.resize(crop_b, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
 
     overlap = cv2.bitwise_and(sig_a, sig_b)
     diff = cv2.absdiff(sig_a, sig_b)
 
     xai_map = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+    
+    # Any overlap > 0 is green. Any difference > 0 is red.
+    xai_map[overlap > 0] = [80, 240, 100]  
+    xai_map[diff > 0] = [50, 50, 255]     
 
-    # Color mapping [B, G, R]: Glowing Emerald Green for Match, Crimson Red for Discrepancy
-    xai_map[overlap > 40] = [80, 240, 100]  
-    xai_map[diff > 40] = [50, 50, 255]     
-
+    # Soften the final visual map slightly for aesthetics
     xai_map = cv2.GaussianBlur(xai_map, (3, 3), 0)
     cv2.imwrite(output_path, xai_map)
 
