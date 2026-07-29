@@ -28,8 +28,8 @@ else:
 
 def load_and_standardize(path):
     """
-    Bulletproof Standardizer: Forces every image into pure binary (Black Ink on White Background).
-    Directly extracts strokes from web canvas alpha channels to prevent ink deletion.
+    Forces every image into pure binary (Black Ink on White Background).
+    Uses Adaptive Thresholding to destroy camera shadows and gray paper.
     """
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     if img is None: return None
@@ -37,48 +37,36 @@ def load_and_standardize(path):
     # 1. Handle Web Canvas (Transparent Background)
     if len(img.shape) == 3 and img.shape[2] == 4:
         alpha = img[:, :, 3]
-        # Create a pure white background
         binary = np.ones(alpha.shape, dtype=np.uint8) * 255 
-        # Wherever the user drew ink (alpha > 0), make it pure black
         binary[alpha > 0] = 0 
         return binary
 
-    # 2. Handle Uploaded Images (No Transparency)
+    # 2. Convert to Grayscale
     if len(img.shape) == 3:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # 3. Handle Dark Mode Uploads (Light ink on dark background)
-    if np.median(img) < 127:
-        img = cv2.bitwise_not(img)
-
-    # 4. Force strict Black & White (Otsu's Thresholding)
-    _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # 3. Handle Camera Photos (Adaptive Thresholding)
+    binary = cv2.adaptiveThreshold(
+        img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+        cv2.THRESH_BINARY, 21, 15
+    )
+    
     return binary
 
 def preprocess_image(path):
-    """
-    Prepares image for Siamese Network.
-    Reverted to the 'Squashed' format to match the original training data, 
-    but keeps the transparent/dark mode fixes.
-    """
+    """Prepares image for Siamese Network."""
     img = load_and_standardize(path)
     if img is None:
         return None
 
     # Invert to White Ink on Black Background for the neural network
     img = cv2.bitwise_not(img)
-    
-    # DO NOT CROP OR PAD. 
-    # Squash directly to 128x128 exactly like the model was originally trained.
     img = cv2.resize(img, (128, 128), interpolation=cv2.INTER_AREA)
 
-    # --- DEBUGGING STEP ---
-    # Save a physical copy of what the AI is actually analyzing
-    # Check your static/uploads folder for files starting with 'DEBUG_AI_'
+    # Save debug copy
     debug_filename = f"DEBUG_AI_{os.path.basename(path)}"
     debug_path = os.path.join(app.config['UPLOAD_FOLDER'], debug_filename)
     cv2.imwrite(debug_path, img)
-    # ----------------------
 
     # Normalize for the neural network
     img = img.astype("float32") / 255.0
@@ -109,7 +97,6 @@ def generate_diff_heatmap(ref_path, test_path, output_path):
 
     target_w, target_h = 512, 256
     
-    # Failsafe for empty cropped arrays
     if crop_a.size == 0 or crop_b.size == 0:
         return
         
@@ -121,11 +108,9 @@ def generate_diff_heatmap(ref_path, test_path, output_path):
 
     xai_map = np.zeros((target_h, target_w, 3), dtype=np.uint8)
     
-    # Any overlap > 0 is green. Any difference > 0 is red.
     xai_map[overlap > 0] = [80, 240, 100]  
     xai_map[diff > 0] = [50, 50, 255]     
 
-    # Soften the final visual map slightly for aesthetics
     xai_map = cv2.GaussianBlur(xai_map, (3, 3), 0)
     cv2.imwrite(output_path, xai_map)
 
@@ -167,7 +152,7 @@ def verify():
     test_path = os.path.join(app.config['UPLOAD_FOLDER'], test_filename)
     heatmap_path = os.path.join(app.config['UPLOAD_FOLDER'], heatmap_filename)
 
-    # Check Reference Mode (Upload File vs Draw Canvas)
+    # Check Reference Mode
     ref_mode = request.form.get('ref_mode', 'file')
     if ref_mode == 'draw':
         ref_draw_data = request.form.get('ref_draw_data', '')
@@ -180,7 +165,7 @@ def verify():
         ref_file = request.files['ref_img']
         ref_file.save(ref_path)
 
-    # Check Test Mode (Upload File vs Draw Canvas)
+    # Check Test Mode
     test_mode = request.form.get('test_mode', 'file')
     if test_mode == 'draw':
         test_draw_data = request.form.get('test_draw_data', '')

@@ -1,58 +1,60 @@
 import tensorflow as tf
-from tensorflow.keras import layers, models, Model
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Lambda, BatchNormalization, Dropout
 import tensorflow.keras.backend as K
 
-# 1. Base Feature Extraction Network
-def build_base_network(input_shape=(128, 128, 1)):
-    inputs = layers.Input(shape=input_shape)
+def build_base_network(input_shape):
+    """
+    Creates a 'Lighter' base CNN designed specifically for small datasets.
+    Fewer parameters prevent the AI from memorizing the data (Mode Collapse).
+    """
+    inputs = Input(shape=input_shape)
     
-    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
-    x = layers.MaxPooling2D((2, 2))(x)
-    x = layers.BatchNormalization()(x)
+    x = Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
+    x = MaxPooling2D((2, 2))(x)
+    x = BatchNormalization()(x)
     
-    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
-    x = layers.MaxPooling2D((2, 2))(x)
-    x = layers.BatchNormalization()(x)
+    x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling2D((2, 2))(x)
+    x = BatchNormalization()(x)
     
-    x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
-    x = layers.MaxPooling2D((2, 2))(x)
+    x = Flatten()(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(0.6)(x) # High dropout forces the network to learn robust features
     
-    x = layers.Flatten()(x)
-    x = layers.Dense(256, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)
-    x = layers.Dense(128, activation=None)(x)  # 128-d embedding vector
+    # L2 Normalization to compress features
+    embeddings = Lambda(lambda t: K.l2_normalize(t, axis=1))(x)
     
-    # L2 normalize embeddings
-    embeddings = layers.Lambda(lambda t: K.l2_normalize(t, axis=1))(x)
-    
-    return Model(inputs, embeddings, name="Embedding_Network")
+    return Model(inputs, embeddings, name="base_network")
 
-# 2. Euclidean Distance Layer
 def euclidean_distance(vects):
+    """Calculates the Euclidean distance between two neural embeddings."""
     x, y = vects
     sum_square = K.sum(K.square(x - y), axis=1, keepdims=True)
     return K.sqrt(K.maximum(sum_square, K.epsilon()))
 
-# 3. Contrastive Loss Function
-def contrastive_loss(margin=1.0):
-    def loss(y_true, y_pred):
-        # y_true: 1 for genuine pair, 0 for forged/dissimilar pair
-        y_true = tf.cast(y_true, tf.float32)
-        square_pred = K.square(y_pred)
-        margin_square = K.square(K.maximum(margin - y_pred, 0))
-        return K.mean(y_true * square_pred + (1 - y_true) * margin_square)
-    return loss
-
-# 4. Build Complete Siamese Network
 def build_siamese_network(input_shape=(128, 128, 1)):
+    """Builds the Siamese network by combining two identical base networks."""
     base_network = build_base_network(input_shape)
     
-    input_a = layers.Input(shape=input_shape, name="reference_img")
-    input_b = layers.Input(shape=input_shape, name="test_img")
+    input_a = Input(shape=input_shape, name="input_a")
+    input_b = Input(shape=input_shape, name="input_b")
     
-    processed_a = base_network(input_a)
-    processed_b = base_network(input_b)
+    feat_vec_a = base_network(input_a)
+    feat_vec_b = base_network(input_b)
     
-    distance = layers.Lambda(euclidean_distance, name="distance_layer")([processed_a, processed_b])
+    distance = Lambda(euclidean_distance, name="distance_layer")([feat_vec_a, feat_vec_b])
     
-    return Model(inputs=[input_a, input_b], outputs=distance, name="Siamese_Network")
+    model = Model(inputs=[input_a, input_b], outputs=distance, name="siamese_network")
+    return model
+
+def contrastive_loss(y_true, y_pred):
+    """Calculates the contrastive loss for the Siamese Network during training."""
+    margin = 1.0
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(y_pred, tf.float32)
+    
+    loss_match = (1 - y_true) * tf.square(y_pred)
+    loss_mismatch = y_true * tf.square(tf.maximum(margin - y_pred, 0.0))
+    
+    return tf.reduce_mean(loss_match + loss_mismatch)
