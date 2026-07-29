@@ -3,84 +3,519 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signature Verification System</title>
+    <title>Siamese Signature AI</title>
+    
     <!-- Modern Font: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        :root {
+            --bg-color: #09090b;         
+            --panel-bg: rgba(24, 24, 27, 0.75); 
+            --border-color: rgba(139, 92, 246, 0.2); 
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --accent-blue: #3b82f6;      
+            --accent-purple: #8b5cf6;    
+            --success: #10b981;          
+            --danger: #ef4444;           
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            position: relative;
+            padding: 2rem 0;
+        }
+
+        /* Animated Background Orbs */
+        .bg-glow {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: -1;
+            animation: float 10s infinite alternate;
+        }
+
+        .glow-1 {
+            width: 400px;
+            height: 400px;
+            background: rgba(139, 92, 246, 0.25);
+            top: -100px;
+            left: -100px;
+        }
+
+        .glow-2 {
+            width: 500px;
+            height: 500px;
+            background: rgba(59, 130, 246, 0.2);
+            bottom: -150px;
+            right: -100px;
+            animation-delay: -5s;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 0 2rem;
+            z-index: 1;
+        }
+
+        .app-wrapper {
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+        }
+
+        .app-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .logo-icon {
+            font-size: 3rem;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .app-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .app-header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .upload-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .card-header h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        /* Input Switcher Tabs */
+        .tab-switcher {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 30px;
+            padding: 3px;
+            margin-bottom: 1rem;
+        }
+
+        .tab-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: #ffffff;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .badge.blue {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .badge.purple {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        /* Drag & Drop Zone */
+        .drop-zone {
+            border: 2px dashed rgba(139, 92, 246, 0.4);
+            border-radius: 12px;
+            height: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .drop-zone:hover, .drop-zone.drag-active {
+            border-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .drop-content {
+            padding: 2rem;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .primary-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .primary-text span {
+            color: var(--accent-blue);
+            text-decoration: underline;
+        }
+
+        .secondary-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .preview-wrapper {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: rgba(24, 24, 27, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .preview-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+            filter: invert(0.9);
+        }
+
+        /* Drawing Canvas Section */
+        .canvas-container {
+            position: relative;
+            height: 250px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            background: #ffffff;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        .canvas-controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+        }
+
+        .btn-clear {
+            background: rgba(239, 68, 68, 0.85);
+            color: white;
+            border: none;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-clear:hover {
+            background: #ef4444;
+        }
+
+        .btn-remove {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .btn-remove:hover {
+            background: #ef4444;
+            color: white;
+        }
+
+        .action-section {
+            display: flex;
+            justify-content: center;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: #ffffff;
+            border: none;
+            padding: 1rem 3rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+            border-radius: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 20px -5px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 25px -5px rgba(139, 92, 246, 0.6);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 768px) {
+            .upload-grid {
+                grid-template-columns: 1fr;
+            }
+            .app-wrapper {
+                padding: 2rem 1.5rem;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="bg-glow glow-1"></div>
     <div class="bg-glow glow-2"></div>
 
     <div class="container">
-        <header class="app-header">
-            <div class="logo-icon">
-                <i class="fa-solid fa-signature"></i>
-            </div>
-            <h1>Signature AI Verification</h1>
-            <p>Upload a reference and test signature to analyze structural similarity with Siamese Neural Networks.</p>
-        </header>
+        <div class="app-wrapper">
+            <header class="app-header">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-microchip"></i>
+                </div>
+                <h1>Siamese Neural Verification</h1>
+                <p>Upload files or draw digital signatures to verify structural feature similarity.</p>
+            </header>
 
-        <form action="/verify" method="POST" enctype="multipart/form-data" class="upload-form" id="verifyForm">
-            <div class="upload-grid">
+            <form action="/verify" method="POST" enctype="multipart/form-data" id="verifyForm">
                 
-                <!-- Box 1: Reference Signature -->
-                <div class="upload-card">
-                    <div class="card-header">
-                        <span class="badge blue"><i class="fa-solid fa-shield-halved"></i> Ground Truth</span>
-                        <h3>Reference Signature</h3>
-                    </div>
-                    <div class="drop-zone" id="dropRef">
-                        <input type="file" id="refImg" name="ref_img" accept="image/*" required hidden>
-                        <div class="drop-content" id="contentRef">
-                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                            <p class="primary-text">Drag & drop image or <span>browse</span></p>
-                            <p class="secondary-text">Supports PNG, JPG, or JPEG</p>
+                <!-- Hidden inputs for canvas Base64 strings -->
+                <input type="hidden" name="ref_draw_data" id="refDrawData">
+                <input type="hidden" name="test_draw_data" id="testDrawData">
+                <input type="hidden" name="ref_mode" id="refMode" value="file">
+                <input type="hidden" name="test_mode" id="testMode" value="file">
+
+                <div class="upload-grid">
+                    
+                    <!-- Box 1: Reference Signature -->
+                    <div class="upload-card">
+                        <div class="card-header">
+                            <h3>Reference Signature</h3>
+                            <span class="badge blue"><i class="fa-solid fa-shield-halved"></i> Ground Truth</span>
                         </div>
-                        <div class="preview-wrapper hidden" id="wrapperRef">
-                            <img id="prevRef" class="preview-img" alt="Reference Preview">
-                            <button type="button" class="btn-remove" onclick="removeImage(event, 'refImg', 'contentRef', 'wrapperRef')">
-                                <i class="fa-solid fa-xmark"></i>
+
+                        <!-- Mode Switcher -->
+                        <div class="tab-switcher">
+                            <button type="button" class="tab-btn active" onclick="switchMode('ref', 'file')">
+                                <i class="fa-solid fa-upload"></i> Upload
+                            </button>
+                            <button type="button" class="tab-btn" onclick="switchMode('ref', 'draw')">
+                                <i class="fa-solid fa-pen-nib"></i> Draw
                             </button>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Box 2: Test Signature -->
-                <div class="upload-card">
-                    <div class="card-header">
-                        <span class="badge purple"><i class="fa-solid fa-magnifying-glass"></i> Sample Target</span>
-                        <h3>Test Signature</h3>
-                    </div>
-                    <div class="drop-zone" id="dropTest">
-                        <input type="file" id="testImg" name="test_img" accept="image/*" required hidden>
-                        <div class="drop-content" id="contentTest">
-                            <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                            <p class="primary-text">Drag & drop image or <span>browse</span></p>
-                            <p class="secondary-text">Supports PNG, JPG, or JPEG</p>
+                        <!-- File Input Panel -->
+                        <div class="drop-zone" id="dropRef">
+                            <input type="file" id="refImg" name="ref_img" accept="image/*" hidden>
+                            <div class="drop-content" id="contentRef">
+                                <i class="fa-solid fa-file-signature upload-icon"></i>
+                                <p class="primary-text">Drag & drop or <span>browse</span></p>
+                                <p class="secondary-text">PNG, JPG up to 5MB</p>
+                            </div>
+                            <div class="preview-wrapper hidden" id="wrapperRef">
+                                <img id="prevRef" class="preview-img" alt="Reference Preview">
+                                <button type="button" class="btn-remove" onclick="removeImage(event, 'refImg', 'contentRef', 'wrapperRef')">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="preview-wrapper hidden" id="wrapperTest">
-                            <img id="prevTest" class="preview-img" alt="Test Preview">
-                            <button type="button" class="btn-remove" onclick="removeImage(event, 'testImg', 'contentTest', 'wrapperTest')">
-                                <i class="fa-solid fa-xmark"></i>
+
+                        <!-- Canvas Drawing Panel -->
+                        <div class="canvas-container hidden" id="canvasBoxRef">
+                            <canvas id="canvasRef"></canvas>
+                            <div class="canvas-controls">
+                                <button type="button" class="btn-clear" onclick="clearCanvas('canvasRef')">
+                                    <i class="fa-solid fa-eraser"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Box 2: Test Signature -->
+                    <div class="upload-card">
+                        <div class="card-header">
+                            <h3>Test Signature</h3>
+                            <span class="badge purple"><i class="fa-solid fa-crosshairs"></i> Target Sample</span>
+                        </div>
+
+                        <!-- Mode Switcher -->
+                        <div class="tab-switcher">
+                            <button type="button" class="tab-btn active" onclick="switchMode('test', 'file')">
+                                <i class="fa-solid fa-upload"></i> Upload
+                            </button>
+                            <button type="button" class="tab-btn" onclick="switchMode('test', 'draw')">
+                                <i class="fa-solid fa-pen-nib"></i> Draw
                             </button>
                         </div>
+
+                        <!-- File Input Panel -->
+                        <div class="drop-zone" id="dropTest">
+                            <input type="file" id="testImg" name="test_img" accept="image/*" hidden>
+                            <div class="drop-content" id="contentTest">
+                                <i class="fa-solid fa-file-image upload-icon"></i>
+                                <p class="primary-text">Drag & drop or <span>browse</span></p>
+                                <p class="secondary-text">PNG, JPG up to 5MB</p>
+                            </div>
+                            <div class="preview-wrapper hidden" id="wrapperTest">
+                                <img id="prevTest" class="preview-img" alt="Test Preview">
+                                <button type="button" class="btn-remove" onclick="removeImage(event, 'testImg', 'contentTest', 'wrapperTest')">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Canvas Drawing Panel -->
+                        <div class="canvas-container hidden" id="canvasBoxTest">
+                            <canvas id="canvasTest"></canvas>
+                            <div class="canvas-controls">
+                                <button type="button" class="btn-clear" onclick="clearCanvas('canvasTest')">
+                                    <i class="fa-solid fa-eraser"></i> Clear
+                                </button>
+                            </div>
+                        </div>
                     </div>
+
                 </div>
 
-            </div>
-
-            <div class="action-section">
-                <button type="submit" class="btn-submit" id="submitBtn">
-                    <span><i class="fa-solid fa-bolt"></i> Verify Signatures</span>
-                </button>
-            </div>
-        </form>
+                <div class="action-section">
+                    <button type="submit" class="btn-submit" id="submitBtn">
+                        <span><i class="fa-solid fa-network-wired"></i> Extract Embeddings & Verify</span>
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script>
+        // Tab Switcher (Upload vs Draw)
+        function switchMode(target, mode) {
+            const dropZone = document.getElementById(target === 'ref' ? 'dropRef' : 'dropTest');
+            const canvasBox = document.getElementById(target === 'ref' ? 'canvasBoxRef' : 'canvasBoxTest');
+            const modeInput = document.getElementById(target === 'ref' ? 'refMode' : 'testMode');
+            const btns = event.target.closest('.tab-switcher').querySelectorAll('.tab-btn');
+
+            btns.forEach(b => b.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+
+            modeInput.value = mode;
+
+            if (mode === 'draw') {
+                dropZone.classList.add('hidden');
+                canvasBox.classList.remove('hidden');
+                initCanvas(target === 'ref' ? 'canvasRef' : 'canvasTest');
+            } else {
+                dropZone.classList.remove('hidden');
+                canvasBox.classList.add('hidden');
+            }
+        }
+
+        // Setup File Uploads
         function setupInteractiveDrop(dropId, inputId, contentId, wrapperId, previewId) {
             const dropZone = document.getElementById(dropId);
             const input = document.getElementById(inputId);
@@ -88,25 +523,27 @@
             const wrapper = document.getElementById(wrapperId);
             const preview = document.getElementById(previewId);
 
-            dropZone.addEventListener('click', () => input.click());
+            dropZone.addEventListener('click', (e) => {
+                if(e.target.closest('.btn-remove')) return;
+                input.click();
+            });
 
-            ['dragenter', 'dragover'].forEach(eventName => {
-                dropZone.addEventListener(eventName, (e) => {
+            ['dragenter', 'dragover'].forEach(evt => {
+                dropZone.addEventListener(evt, (e) => {
                     e.preventDefault();
                     dropZone.classList.add('drag-active');
                 });
             });
 
-            ['dragleave', 'drop'].forEach(eventName => {
-                dropZone.addEventListener(eventName, (e) => {
+            ['dragleave', 'drop'].forEach(evt => {
+                dropZone.addEventListener(evt, (e) => {
                     e.preventDefault();
                     dropZone.classList.remove('drag-active');
                 });
             });
 
             dropZone.addEventListener('drop', (e) => {
-                const dt = e.dataTransfer;
-                const files = dt.files;
+                const files = e.dataTransfer.files;
                 if (files.length) {
                     input.files = files;
                     handleFileSelect(files[0], content, wrapper, preview);
@@ -140,9 +577,94 @@
         setupInteractiveDrop('dropRef', 'refImg', 'contentRef', 'wrapperRef', 'prevRef');
         setupInteractiveDrop('dropTest', 'testImg', 'contentTest', 'wrapperTest', 'prevTest');
 
-        document.getElementById('verifyForm').addEventListener('submit', function() {
+        // Canvas Drawing Engine
+        const canvases = {};
+
+        function initCanvas(canvasId) {
+            if (canvases[canvasId]?.initialized) return;
+
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Set internal drawing dimensions
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+
+            // Fill background with solid white for signature contrast
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#000000'; // Dark stroke ink
+
+            let drawing = false;
+
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            }
+
+            function startDraw(e) {
+                drawing = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            }
+
+            function draw(e) {
+                if (!drawing) return;
+                e.preventDefault();
+                const pos = getPos(e);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            }
+
+            function stopDraw() {
+                drawing = false;
+            }
+
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDraw);
+            canvas.addEventListener('mouseleave', stopDraw);
+
+            canvas.addEventListener('touchstart', startDraw);
+            canvas.addEventListener('touchmove', draw);
+            canvas.addEventListener('touchend', stopDraw);
+
+            canvases[canvasId] = { canvas, ctx, initialized: true };
+        }
+
+        function clearCanvas(canvasId) {
+            const obj = canvases[canvasId];
+            if (obj) {
+                obj.ctx.fillStyle = '#ffffff';
+                obj.ctx.fillRect(0, 0, obj.canvas.width, obj.canvas.height);
+            }
+        }
+
+        // Form Submit Handler
+        document.getElementById('verifyForm').addEventListener('submit', function(e) {
+            const refMode = document.getElementById('refMode').value;
+            const testMode = document.getElementById('testMode').value;
+
+            // Save Canvas Base64 string if in draw mode
+            if (refMode === 'draw' && canvases['canvasRef']) {
+                document.getElementById('refDrawData').value = canvases['canvasRef'].canvas.toDataURL('image/png');
+            }
+            if (testMode === 'draw' && canvases['canvasTest']) {
+                document.getElementById('testDrawData').value = canvases['canvasTest'].canvas.toDataURL('image/png');
+            }
+
             const btn = document.getElementById('submitBtn');
-            btn.innerHTML = '<span><i class="fa-solid fa-spinner fa-spin"></i> Processing Neural Embeddings...</span>';
+            btn.innerHTML = '<span><i class="fa-solid fa-spinner fa-spin"></i> Processing Neural Layers...</span>';
             btn.classList.add('loading');
         });
     </script>
