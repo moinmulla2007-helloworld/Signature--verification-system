@@ -4,10 +4,7 @@ from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense,
 import tensorflow.keras.backend as K
 
 def build_base_network(input_shape):
-    """
-    Creates a 'Lighter' base CNN designed specifically for small datasets.
-    Fewer parameters prevent the AI from memorizing the data (Mode Collapse).
-    """
+    """Lighter base CNN designed for small custom datasets."""
     inputs = Input(shape=input_shape)
     
     x = Conv2D(32, (3, 3), activation='relu', padding='same')(inputs)
@@ -20,21 +17,18 @@ def build_base_network(input_shape):
     
     x = Flatten()(x)
     x = Dense(128, activation='relu')(x)
-    x = Dropout(0.6)(x) # High dropout forces the network to learn robust features
+    x = Dropout(0.6)(x) 
     
-    # L2 Normalization to compress features
+    # Compress features
     embeddings = Lambda(lambda t: K.l2_normalize(t, axis=1))(x)
-    
     return Model(inputs, embeddings, name="base_network")
 
 def euclidean_distance(vects):
-    """Calculates the Euclidean distance between two neural embeddings."""
     x, y = vects
     sum_square = K.sum(K.square(x - y), axis=1, keepdims=True)
     return K.sqrt(K.maximum(sum_square, K.epsilon()))
 
 def build_siamese_network(input_shape=(128, 128, 1)):
-    """Builds the Siamese network by combining two identical base networks."""
     base_network = build_base_network(input_shape)
     
     input_a = Input(shape=input_shape, name="input_a")
@@ -44,17 +38,13 @@ def build_siamese_network(input_shape=(128, 128, 1)):
     feat_vec_b = base_network(input_b)
     
     distance = Lambda(euclidean_distance, name="distance_layer")([feat_vec_a, feat_vec_b])
-    
-    model = Model(inputs=[input_a, input_b], outputs=distance, name="siamese_network")
-    return model
+    return Model(inputs=[input_a, input_b], outputs=distance, name="siamese_network")
 
 def contrastive_loss(y_true, y_pred):
-    """Calculates the contrastive loss for the Siamese Network during training."""
     margin = 1.0
     y_true = tf.cast(y_true, tf.float32)
     y_pred = tf.cast(y_pred, tf.float32)
     
     loss_match = (1 - y_true) * tf.square(y_pred)
     loss_mismatch = y_true * tf.square(tf.maximum(margin - y_pred, 0.0))
-    
     return tf.reduce_mean(loss_match + loss_mismatch)
