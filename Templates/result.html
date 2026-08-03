@@ -1,486 +1,355 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verification Result - Siamese Signature AI</title>
-    
-    <!-- Modern Font: Plus Jakarta Sans -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comparison result — SignaVerify</title>
 
-    <style>
-        /* COLOR PALETTE - Deep Space Neural Theme */
-        :root {
-            --bg-color: #09090b;         
-            --panel-bg: rgba(24, 24, 27, 0.75); 
-            --border-color: rgba(139, 92, 246, 0.2); 
-            --text-main: #f4f4f5;
-            --text-muted: #a1a1aa;
-            --accent-blue: #3b82f6;      
-            --accent-purple: #8b5cf6;    
-            --success: #10b981;          
-            --danger: #ef4444;           
-        }
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }
+<style>
+  /* ---------------------------------------------------------------
+     Tokens — shared with the verification form
+  --------------------------------------------------------------- */
+  :root{
+    --paper:#f7f7f4;
+    --paper-raised:#ffffff;
+    --ink-900:#191b1f;
+    --ink-700:#3b3f46;
+    --ink-500:#6b6f76;
+    --line:#e1e0da;
+    --line-strong:#c9c8c1;
+    --seal:#7a2530;
+    --seal-soft:#f3e7e5;
+    --teal:#1f4b4b;
+    --teal-soft:#e4eeec;
+    --match:#2f6b4f;
+    --match-soft:#e7f0ea;
+    --focus:#2451c4;
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow-x: hidden;
-            position: relative;
-            padding: 2rem 0;
-        }
+    --font-display:'Fraunces', Georgia, serif;
+    --font-body:'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, monospace;
 
-        /* Animated Background Orbs */
-        .bg-glow {
-            position: absolute;
-            border-radius: 50%;
-            filter: blur(120px);
-            z-index: -1;
-            animation: float 10s infinite alternate;
-        }
+    --s-1:8px; --s-2:16px; --s-3:24px; --s-4:32px;
+    --s-6:48px; --s-8:64px; --s-12:96px; --s-16:128px;
 
-        .glow-1 {
-            width: 400px;
-            height: 400px;
-            background: rgba(139, 92, 246, 0.25);
-            top: -100px;
-            left: -100px;
-        }
+    --radius-sm:4px;
+    --radius-md:10px;
+    --radius-pill:999px;
 
-        .glow-2 {
-            width: 500px;
-            height: 500px;
-            background: rgba(59, 130, 246, 0.2);
-            bottom: -150px;
-            right: -100px;
-            animation-delay: -5s;
-        }
+    --shadow-card:0 1px 2px rgba(25,27,31,0.04);
+    --shadow-raised:0 8px 24px rgba(25,27,31,0.08);
 
-        @keyframes float {
-            0% { transform: translate(0, 0); }
-            100% { transform: translate(50px, 50px); }
-        }
+    --ease:cubic-bezier(.4,0,.2,1);
+  }
 
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            padding: 0 2rem;
-            z-index: 1;
-        }
+  *{ margin:0; padding:0; box-sizing:border-box; }
 
-        .app-wrapper {
-            background: var(--panel-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--border-color);
-            border-radius: 24px;
-            padding: 3rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
-        }
+  html{ scroll-behavior:smooth; }
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *,*::before,*::after{ animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; }
+  }
 
-        .app-header {
-            text-align: center;
-            margin-bottom: 2.5rem;
-        }
+  body{
+    background:var(--paper);
+    color:var(--ink-900);
+    font-family:var(--font-body);
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
 
-        .logo-icon {
-            font-size: 3rem;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 1rem;
-        }
+  img,svg{ display:block; max-width:100%; }
+  a{ color:inherit; }
 
-        .app-header h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 0.5rem;
-        }
+  :focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
-        .app-header p {
-            color: var(--text-muted);
-            font-size: 1.1rem;
-        }
+  .container{ width:100%; max-width:1080px; margin:0 auto; padding:0 var(--s-3); }
 
-        /* Status Banner */
-        .status-banner {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            padding: 1.5rem 2rem;
-            border-radius: 16px;
-            margin-bottom: 2.5rem;
-            border: 2px solid;
-            background: rgba(0, 0, 0, 0.4);
-        }
+  .icon{
+    width:1em; height:1em;
+    stroke:currentColor; fill:none;
+    stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+    vertical-align:-0.15em; flex-shrink:0;
+  }
 
-        .status-genuine {
-            border-color: rgba(16, 185, 129, 0.4);
-            background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, rgba(9, 9, 11, 0) 100%);
-        }
+  /* ---------------------------------------------------------------
+     Nav
+  --------------------------------------------------------------- */
+  .site-header{
+    position:sticky; top:0; z-index:20;
+    background:rgba(247,247,244,0.92);
+    border-bottom:1px solid var(--line);
+  }
+  .nav{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:var(--s-2) var(--s-3);
+    max-width:1080px; margin:0 auto;
+  }
+  .brand{
+    display:flex; align-items:center; gap:var(--s-1);
+    font-family:var(--font-display); font-weight:600; font-size:18px;
+    letter-spacing:-0.01em; text-decoration:none;
+  }
+  .brand-mark{ width:28px; height:28px; flex-shrink:0; }
+  .brand-mark circle{ fill:none; stroke:var(--ink-900); stroke-width:1.2; }
+  .brand-mark path{ fill:none; stroke:var(--seal); stroke-width:1.6; stroke-linecap:round; }
 
-        .status-genuine .status-icon i {
-            color: var(--success);
-            text-shadow: 0 0 15px rgba(16, 185, 129, 0.6);
-        }
+  .nav-cta{
+    font-size:14px; font-weight:600;
+    padding:var(--s-1) var(--s-2);
+    background:var(--ink-900); color:var(--paper);
+    border-radius:var(--radius-sm); text-decoration:none;
+    transition:background 0.2s var(--ease), transform 0.2s var(--ease);
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .nav-cta:hover{ background:var(--seal); transform:translateY(-1px); }
 
-        .status-genuine h2 {
-            color: var(--success);
-        }
+  /* ---------------------------------------------------------------
+     Page
+  --------------------------------------------------------------- */
+  .result{ padding:var(--s-8) 0 var(--s-16); }
 
-        .status-forgery {
-            border-color: rgba(239, 68, 68, 0.4);
-            background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, rgba(9, 9, 11, 0) 100%);
-        }
+  .page-head{ text-align:center; max-width:520px; margin:0 auto var(--s-6); }
+  .eyebrow{
+    display:inline-block; font-family:var(--font-mono); font-size:12px;
+    letter-spacing:0.12em; text-transform:uppercase; color:var(--seal);
+    margin-bottom:var(--s-2);
+  }
+  .page-head h1{
+    font-family:var(--font-display); font-weight:500; font-size:clamp(26px, 3vw, 34px);
+    letter-spacing:-0.01em; margin-bottom:var(--s-2);
+  }
+  .page-head p{ color:var(--ink-500); font-size:15px; }
 
-        .status-forgery .status-icon i {
-            color: var(--danger);
-            text-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
-        }
+  /* Result banner */
+  .result-banner{
+    display:flex; align-items:center; gap:var(--s-3);
+    padding:var(--s-3) var(--s-4);
+    background:var(--paper-raised); border:1px solid var(--line); border-left:3px solid var(--line-strong);
+    border-radius:var(--radius-md); box-shadow:var(--shadow-card);
+    margin-bottom:var(--s-6);
+  }
+  .result-banner.is-match{ border-left-color:var(--match); }
+  .result-banner.is-mismatch{ border-left-color:var(--seal); }
 
-        .status-forgery h2 {
-            color: var(--danger);
-        }
+  .result-icon{
+    width:48px; height:48px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .is-match .result-icon{ background:var(--match-soft); color:var(--match); }
+  .is-mismatch .result-icon{ background:var(--seal-soft); color:var(--seal); }
+  .result-icon .icon{ width:22px; height:22px; }
 
-        .status-icon i {
-            font-size: 3rem;
-        }
+  .result-text h2{
+    font-family:var(--font-display); font-weight:500; font-size:20px;
+    letter-spacing:-0.01em; margin-bottom:2px; text-transform:capitalize;
+  }
+  .is-match .result-text h2{ color:var(--match); }
+  .is-mismatch .result-text h2{ color:var(--seal); }
+  .result-text p{ font-size:14px; color:var(--ink-500); }
 
-        .status-info h2 {
-            font-size: 1.8rem;
-            margin-bottom: 0.25rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+  @media (max-width:640px){
+    .result-banner{ flex-direction:column; text-align:center; }
+  }
 
-        .status-info p {
-            color: var(--text-muted);
-            font-size: 1rem;
-        }
+  /* Metrics */
+  .metrics-grid{ display:grid; grid-template-columns:1fr 1fr; gap:var(--s-4); margin-bottom:var(--s-4); }
+  @media (max-width:800px){ .metrics-grid{ grid-template-columns:1fr; } }
 
-        /* Metrics Grid */
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin-bottom: 2.5rem;
-        }
+  .metric-card{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:var(--s-4); box-shadow:var(--shadow-card);
+  }
+  .metric-header{ display:flex; align-items:center; gap:var(--s-2); margin-bottom:var(--s-3); }
+  .metric-header .icon{ color:var(--ink-500); width:18px; height:18px; }
+  .metric-title{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--ink-500);
+  }
 
-        .metric-card {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
+  .metric-value{
+    font-family:var(--font-mono); font-weight:500; font-size:40px; color:var(--ink-900);
+    line-height:1;
+  }
+  .metric-footnote{
+    display:flex; align-items:center; gap:6px;
+    font-size:13px; color:var(--ink-500); margin-top:var(--s-2);
+  }
 
-        .metric-header {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
+  /* Circular progress */
+  .ring-wrap{ position:relative; width:180px; height:180px; margin:0 auto; }
+  .ring-chart{ width:100%; height:100%; transform:rotate(-90deg); }
+  .ring-chart circle{ fill:none; stroke-width:8; stroke-linecap:round; }
+  .ring-bg{ stroke:var(--line); }
+  .ring-fill{
+    stroke-dasharray:251.2;
+    stroke-dashoffset:calc(251.2 - (251.2 * var(--percent) / 100));
+    transition:stroke-dashoffset 1.2s var(--ease);
+  }
+  .is-match .ring-fill{ stroke:var(--match); }
+  .is-mismatch .ring-fill{ stroke:var(--seal); }
+  .ring-value{
+    position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+    font-family:var(--font-mono); font-weight:500; font-size:28px; color:var(--ink-900);
+  }
 
-        .metric-icon {
-            width: 45px;
-            height: 45px;
-            border-radius: 12px;
-            background: rgba(139, 92, 246, 0.15);
-            color: var(--accent-purple);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-        }
+  /* Comparison grid */
+  .comparison-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:var(--s-4); margin-bottom:var(--s-6); }
+  @media (max-width:800px){ .comparison-grid{ grid-template-columns:1fr; } }
 
-        .metric-data {
-            display: flex;
-            flex-direction: column;
-        }
+  .comparison-card{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius-md);
+    overflow:hidden; box-shadow:var(--shadow-card);
+  }
+  .comparison-card.accent-seal{ border-top:2px solid var(--seal); }
+  .comparison-card.accent-teal{ border-top:2px solid var(--teal); }
 
-        .metric-title {
-            font-size: 0.9rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-        }
+  .card-tag{
+    display:flex; align-items:center; gap:8px;
+    padding:var(--s-2) var(--s-3);
+    border-bottom:1px solid var(--line);
+    font-family:var(--font-mono); font-size:11px; font-weight:500;
+    letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-700);
+  }
+  .card-tag .icon{ width:14px; height:14px; }
 
-        .metric-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            color: var(--text-main);
-        }
+  .image-wrapper{
+    height:200px; padding:var(--s-3);
+    display:flex; align-items:center; justify-content:center;
+    background:var(--paper);
+  }
+  .image-wrapper img{ max-width:100%; max-height:100%; object-fit:contain; border-radius:var(--radius-sm); }
 
-        /* --- Circular Progress Styles --- */
-        .circular-progress-container {
-            position: relative;
-            width: 190px;
-            height: 190px;
-            margin: 1rem auto 0 auto;
-        }
-
-        .circular-chart {
-            width: 100%;
-            height: 100%;
-            transform: rotate(-90deg);
-        }
-
-        .circular-chart circle {
-            fill: none;
-            stroke-width: 8;
-            stroke-linecap: round;
-        }
-
-        .circle-bg {
-            stroke: rgba(255, 255, 255, 0.08);
-        }
-
-        .circle-fill {
-            stroke: url(#circleGradient);
-            stroke-dasharray: 251.2;
-            stroke-dashoffset: calc(251.2 - (251.2 * var(--percent) / 100));
-            transition: stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .circular-value {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: var(--text-main);
-        }
-
-        .metric-footnote {
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-top: 1rem;
-            display: block;
-        }
-
-        /* 3-Column Comparison Grid for Heatmap */
-        .comparison-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem;
-            margin-bottom: 3rem;
-        }
-
-        .comparison-card {
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            overflow: hidden;
-        }
-
-        .card-tag {
-            background: rgba(24, 24, 27, 0.9);
-            padding: 0.75rem 1rem;
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: var(--accent-blue);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .card-tag.xai-tag {
-            color: var(--accent-purple);
-        }
-
-        .image-wrapper {
-            width: 100%;
-            height: 220px;
-            padding: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .image-wrapper img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-            border-radius: 8px;
-        }
-
-        .image-wrapper .signature-img {
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5)); 
-        }
-
-        /* Action Section */
-        .action-section {
-            display: flex;
-            justify-content: center;
-        }
-
-        .btn-secondary {
-            background: transparent;
-            color: var(--accent-purple);
-            border: 2px solid var(--accent-purple);
-            padding: 0.8rem 2.5rem;
-            font-size: 1.1rem;
-            font-weight: 600;
-            border-radius: 30px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            text-decoration: none;
-            transition: all 0.3s ease;
-        }
-
-        .btn-secondary:hover {
-            background: rgba(139, 92, 246, 0.1);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px -5px rgba(139, 92, 246, 0.3);
-            color: #fff;
-        }
-
-        /* Responsive */
-        @media (max-width: 900px) {
-            .metrics-grid {
-                grid-template-columns: 1fr;
-            }
-            .comparison-grid {
-                grid-template-columns: 1fr;
-            }
-            .app-wrapper {
-                padding: 2rem 1.5rem;
-            }
-            .status-banner {
-                flex-direction: column;
-                text-align: center;
-                gap: 1rem;
-            }
-        }
-    </style>
+  /* Action */
+  .action-section{ display:flex; justify-content:center; }
+  .btn-secondary{
+    display:inline-flex; align-items:center; gap:var(--s-1);
+    background:transparent; color:var(--ink-900); border:1px solid var(--ink-900);
+    padding:12px 26px; font-family:var(--font-body); font-size:15px; font-weight:600;
+    border-radius:var(--radius-sm); cursor:pointer; text-decoration:none;
+    transition:background 0.2s var(--ease), color 0.2s var(--ease), transform 0.15s var(--ease);
+  }
+  .btn-secondary:hover{ background:var(--ink-900); color:var(--paper); transform:translateY(-1px); }
+</style>
 </head>
 <body>
-    <div class="bg-glow glow-1"></div>
-    <div class="bg-glow glow-2"></div>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="/" class="brand">
+        <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+          <circle cx="14" cy="14" r="12.5"/>
+          <path d="M8 17 C10 10, 12 10, 13.5 15 C15 20, 17 20, 19 13"/>
+        </svg>
+        SignaVerify
+      </a>
+      <a href="/" class="nav-cta">
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10a6 6 0 1 0 1.8-4.3"/><path d="M4 10V6M4 10H8"/></svg>
+        Compare another pair
+      </a>
+    </nav>
+  </header>
 
-    <div class="container">
-        <div class="app-wrapper">
-            <header class="app-header">
-                <div class="logo-icon">
-                    <i class="fa-solid fa-chart-line"></i>
-                </div>
-                <h1>Verification Analysis</h1>
-                <p>Siamese Neural Model metric scores and structural similarity breakdown.</p>
-            </header>
+  <main>
+    <section class="result">
+      <div class="container">
 
-            <!-- Status Banner -->
-            <div class="status-banner {{ 'status-genuine' if match else 'status-forgery' }}">
-                <div class="status-icon">
-                    <i class="fa-solid {{ 'fa-fingerprint' if match else 'fa-triangle-exclamation' }}"></i>
-                </div>
-                <div class="status-info">
-                    <h2>{{ status }}</h2>
-                    <p>{{ 'The test signature closely matches the reference pattern features and neural embeddings.' if match else 'The test signature deviates significantly from the original structural embedding.' }}</p>
-                </div>
-            </div>
-
-            <!-- Metrics Display Grid -->
-            <div class="metrics-grid">
-                
-                <!-- Circular Similarity Card -->
-                <div class="metric-card">
-                    <div class="metric-header">
-                        <div class="metric-icon"><i class="fa-solid fa-percent"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">Similarity Match</span>
-                        </div>
-                    </div>
-                    
-                    <div class="circular-progress-container">
-                        <svg class="circular-chart" viewBox="0 0 100 100">
-                            <defs>
-                                <linearGradient id="circleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stop-color="#3b82f6" />
-                                    <stop offset="100%" stop-color="#8b5cf6" />
-                                </linearGradient>
-                            </defs>
-                            <circle class="circle-bg" cx="50" cy="50" r="40"></circle>
-                            <circle class="circle-fill" cx="50" cy="50" r="40" style="--percent: {{ similarity }};"></circle>
-                        </svg>
-                        <div class="circular-value">{{ similarity }}%</div>
-                    </div>
-                </div>
-
-                <!-- Distance Card -->
-                <div class="metric-card">
-                    <div class="metric-header">
-                        <div class="metric-icon"><i class="fa-solid fa-ruler-combined"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">Euclidean Distance</span>
-                        </div>
-                    </div>
-                    <span class="metric-value">{{ distance }}</span>
-                    <span class="metric-footnote"><i class="fa-solid fa-circle-info"></i> Security Threshold: &lt; 0.20</span>
-                </div>
-            </div>
-
-            <!-- 3-Column Image Comparison -->
-            <div class="comparison-grid">
-                <div class="comparison-card">
-                    <div class="card-tag">
-                        <i class="fa-solid fa-shield-halved"></i> Reference
-                    </div>
-                    <div class="image-wrapper">
-                        <img class="signature-img" src="{{ url_for('static', filename='uploads/' + ref_filename) }}" alt="Reference Signature">
-                    </div>
-                </div>
-
-                <div class="comparison-card">
-                    <div class="card-tag">
-                        <i class="fa-solid fa-crosshairs"></i> Target Test
-                    </div>
-                    <div class="image-wrapper">
-                        <img class="signature-img" src="{{ url_for('static', filename='uploads/' + test_filename) }}" alt="Test Signature">
-                    </div>
-                </div>
-
-                <!-- XAI Heatmap Card -->
-                <div class="comparison-card">
-                    <div class="card-tag xai-tag">
-                        <i class="fa-solid fa-eye"></i> XAI Variance Map
-                    </div>
-                    <div class="image-wrapper">
-                        <img src="{{ url_for('static', filename='uploads/' + heatmap_filename) }}" alt="Difference Heatmap">
-                    </div>
-                </div>
-            </div>
-
-            <div class="action-section">
-                <a href="/" class="btn-secondary">
-                    <i class="fa-solid fa-arrow-rotate-left"></i> Analyze Another Pair
-                </a>
-            </div>
+        <div class="page-head">
+          <p class="eyebrow">Verification result</p>
+          <h1>Comparison result</h1>
+          <p>Structural similarity between the reference and test signature.</p>
         </div>
-    </div>
+
+        <!-- Status -->
+        <div class="result-banner {{ 'is-match' if match else 'is-mismatch' }}">
+          <div class="result-icon">
+            {% if match %}
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10l4 4 8-8"/></svg>
+            {% else %}
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3l8 14H2z"/><path d="M10 8.5v3.5M10 14.8h.01"/></svg>
+            {% endif %}
+          </div>
+          <div class="result-text">
+            <h2>{{ status }}</h2>
+            <p>{{ "The test signature's stroke structure closely matches the reference." if match else "The test signature's stroke structure differs meaningfully from the reference." }}</p>
+          </div>
+        </div>
+
+        <!-- Metrics -->
+        <div class="metrics-grid {{ 'is-match' if match else 'is-mismatch' }}">
+          <div class="metric-card">
+            <div class="metric-header">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3v3.5M10 13.5V17M3 10h3.5M13.5 10H17"/></svg>
+              <span class="metric-title">Similarity match</span>
+            </div>
+            <div class="ring-wrap">
+              <svg class="ring-chart" viewBox="0 0 100 100">
+                <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+                <circle class="ring-fill" cx="50" cy="50" r="40" style="--percent: {{ similarity }};"></circle>
+              </svg>
+              <div class="ring-value">{{ similarity }}%</div>
+            </div>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-header">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 13l7-7 4 4-7 7-4-4z"/><path d="M8.5 7.5l1.2 1.2M11 5l1.2 1.2"/></svg>
+              <span class="metric-title">Euclidean distance</span>
+            </div>
+            <span class="metric-value">{{ distance }}</span>
+            <span class="metric-footnote">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 9v4.5M10 6.3h.01"/></svg>
+              Match threshold: distance below 0.20
+            </span>
+          </div>
+        </div>
+
+        <!-- Comparison -->
+        <div class="comparison-grid">
+          <div class="comparison-card accent-seal">
+            <div class="card-tag">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3l6 2.5v4c0 4-2.5 6.7-6 7.5-3.5-.8-6-3.5-6-7.5v-4L10 3z"/></svg>
+              Reference
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ url_for('static', filename='uploads/' + ref_filename) }}" alt="Reference signature used for comparison">
+            </div>
+          </div>
+
+          <div class="comparison-card accent-teal">
+            <div class="card-tag">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6"/><circle cx="10" cy="10" r="1.3" fill="currentColor" stroke="none"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3"/></svg>
+              Test sample
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ url_for('static', filename='uploads/' + test_filename) }}" alt="Test signature submitted for verification">
+            </div>
+          </div>
+
+          <div class="comparison-card">
+            <div class="card-tag">
+              <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.2"/></svg>
+              Difference map
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ url_for('static', filename='uploads/' + heatmap_filename) }}" alt="Heat map highlighting structural differences between the two signatures">
+            </div>
+          </div>
+        </div>
+
+        <div class="action-section">
+          <a href="/" class="btn-secondary">
+            <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10a6 6 0 1 0 1.8-4.3"/><path d="M4 10V6M4 10H8"/></svg>
+            Compare another pair
+          </a>
+        </div>
+
+      </div>
+    </section>
+  </main>
 </body>
 </html>
