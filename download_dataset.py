@@ -1,46 +1,39 @@
 import os
 import zipfile
-import urllib.request
 import shutil
 
-# Dataset URL from open GitHub repository (CEDAR sample subset)
-DATASET_URL = "https://github.com/Aayush-K/Signature-Verification/archive/refs/heads/master.zip"
-ZIP_PATH = "dataset_temp.zip"
-EXTRACT_DIR = "dataset_temp"
+def setup_cedar_dataset(zip_filename="archive.zip", target_dir="dataset"):
+    # Change "archive.zip" above to exactly match the name of the file you downloaded
+    
+    genuine_dir = os.path.join(target_dir, 'genuine')
+    forged_dir = os.path.join(target_dir, 'forged')
+    
+    os.makedirs(genuine_dir, exist_ok=True)
+    os.makedirs(forged_dir, exist_ok=True)
 
-print("Downloading real signature dataset...")
-urllib.request.urlretrieve(DATASET_URL, ZIP_PATH)
+    if not os.path.exists(zip_filename):
+        print(f"Error: {zip_filename} not found in the current folder!")
+        return
 
-print("Extracting files...")
-with zipfile.ZipFile(ZIP_PATH, 'r') as zip_ref:
-    zip_ref.extractall(EXTRACT_DIR)
+    print(f"Extracting {zip_filename}...")
+    with zipfile.ZipFile(zip_filename, 'r') as zip_ref:
+        zip_ref.extractall("temp_cedar")
+        
+    print("Sorting images into genuine and forged folders...")
+    
+    for root, dirs, files in os.walk("temp_cedar"):
+        for file in files:
+            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                file_path = os.path.join(root, file)
+                
+                # Sort based on folder or file names containing 'forg'
+                if 'forg' in file.lower() or 'forg' in root.lower():
+                    shutil.move(file_path, os.path.join(forged_dir, file))
+                else:
+                    shutil.move(file_path, os.path.join(genuine_dir, file))
+                    
+    shutil.rmtree("temp_cedar")
+    print(f"Success! Real signature dataset loaded into '{target_dir}'.")
 
-# Paths in extracted repo
-base_extracted = os.path.join(EXTRACT_DIR, "Signature-Verification-master", "data")
-real_src = os.path.join(base_extracted, "real")
-forged_src = os.path.join(base_extracted, "forged")
-
-# Destination paths
-genuine_dst = os.path.join("dataset", "genuine")
-forged_dst = os.path.join("dataset", "forged")
-
-os.makedirs(genuine_dst, exist_ok=True)
-os.makedirs(forged_dst, exist_ok=True)
-
-# Copy genuine signatures
-if os.path.exists(real_src):
-    for f in os.listdir(real_src):
-        if f.endswith(('.png', '.jpg', '.jpeg')):
-            shutil.copy(os.path.join(real_src, f), genuine_dst)
-
-# Copy forged signatures
-if os.path.exists(forged_src):
-    for f in os.listdir(forged_src):
-        if f.endswith(('.png', '.jpg', '.jpeg')):
-            shutil.copy(os.path.join(forged_src, f), forged_dst)
-
-# Cleanup temp files
-os.remove(ZIP_PATH)
-shutil.rmtree(EXTRACT_DIR)
-
-print("Dataset successfully extracted and placed into dataset/genuine and dataset/forged!")
+if __name__ == "__main__":
+    setup_cedar_dataset()

@@ -18,3 +18,11 @@ __pycache__/
 *.png
 *.jpg
 *.jpeg
+
+# Heavy Model Weights
+saved_model/
+
+# Extra Datasets and Zips
+archive.zip
+Combined_Dataset/
+Custom_Dataset/

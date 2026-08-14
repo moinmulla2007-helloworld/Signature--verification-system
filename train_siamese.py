@@ -1,173 +1,176 @@
 import os
 import cv2
-import numpy as np
 import random
+import numpy as np
+from PIL import Image, ImageOps
 import tensorflow as tf
-from itertools import combinations
 from model import build_siamese_network, contrastive_loss
 
+# ---------------------------------------------------------
+# 1. IDENTICAL PREPROCESSING TO APP.PY
+# ---------------------------------------------------------
+def read_image_exif_safe(path):
+    try:
+        pil_img = Image.open(path)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        mode = pil_img.mode
+        if mode == 'RGBA':
+            arr = np.array(pil_img)
+            return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
+        elif mode == 'RGB':
+            arr = np.array(pil_img)
+            return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        elif mode in ('L', 'LA', '1'):
+            return np.array(pil_img.convert('L'))
+        else:
+            arr = np.array(pil_img.convert('RGB'))
+            return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        return None
+
 def load_and_standardize(path):
-    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    img = read_image_exif_safe(path)
     if img is None: return None
 
     if len(img.shape) == 3 and img.shape[2] == 4:
         alpha = img[:, :, 3]
-        binary = np.ones(alpha.shape, dtype=np.uint8) * 255 
-        binary[alpha > 0] = 0 
+        binary = np.ones(alpha.shape, dtype=np.uint8) * 255
+        binary[alpha > 0] = 0
         return binary
 
-    if len(img.shape) == 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
+    if np.median(gray) < 127: gray = cv2.bitwise_not(gray)
 
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    if np.median(blurred) < 127:
-        blurred = cv2.bitwise_not(blurred)
+    bg_map = cv2.GaussianBlur(gray, (75, 75), 0)
+    bg_map = np.clip(bg_map, 1, 255)
+    normalized = cv2.divide(gray, bg_map, scale=255)
 
-    binary = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        cv2.THRESH_BINARY, 31, 15
-    )
+    _, binary = cv2.threshold(normalized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary
+
+def crop_to_ink(img):
+    coords = cv2.findNonZero(img)
+    if coords is None: return img
+    x, y, w, h = cv2.boundingRect(coords)
+    if w > 10 and h > 10: return img[y:y+h, x:x+w]
+    return img
 
 def preprocess_image(path):
     img = load_and_standardize(path)
     if img is None: return None
 
     img = cv2.bitwise_not(img)
-
-    # 10-pixel border wipe for camera shadows
     border = 10
     img[:border, :] = 0
     img[-border:, :] = 0
     img[:, :border] = 0
     img[:, -border:] = 0
 
-    # Contour Noise Filtering
     contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
         if cv2.contourArea(cnt) < 25 or w < 3 or h < 3:
             cv2.drawContours(img, [cnt], -1, 0, -1)
 
-    # Tight Crop to clean ink
-    coords = cv2.findNonZero(img)
-    if coords is not None:
-        x, y, w, h = cv2.boundingRect(coords)
-        if w > 10 and h > 10:  
-            img = img[y:y+h, x:x+w]
-            
+    img = crop_to_ink(img)
     if img.size == 0: return None
 
-    # Anti-Distortion Padding
     h, w = img.shape
     diff = abs(h - w)
     if h > w:
         pad_left = diff // 2
-        pad_right = diff - pad_left
-        img = cv2.copyMakeBorder(img, 0, 0, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
+        img = cv2.copyMakeBorder(img, 0, 0, pad_left, diff - pad_left, cv2.BORDER_CONSTANT, value=0)
     elif w > h:
         pad_top = diff // 2
-        pad_bottom = diff - pad_top
-        img = cv2.copyMakeBorder(img, pad_top, pad_bottom, 0, 0, cv2.BORDER_CONSTANT, value=0)
+        img = cv2.copyMakeBorder(img, pad_top, diff - pad_top, 0, 0, cv2.BORDER_CONSTANT, value=0)
 
-    # Resize & Normalize
-    img = cv2.resize(img, (128, 128), interpolation=cv2.INTER_AREA)
+    img = cv2.resize(img, (256, 256), interpolation=cv2.INTER_AREA)
     img = img.astype("float32") / 255.0
     return np.expand_dims(img, axis=-1)
 
-def augment_signature(img_array, num_variations=15):
-    img = img_array[:, :, 0]
-    aug_images = [img_array] 
-    
-    for _ in range(num_variations):
-        angle = np.random.uniform(-12, 12)
-        M_rot = cv2.getRotationMatrix2D((64, 64), angle, 1.0)
-        rotated = cv2.warpAffine(img, M_rot, (128, 128), borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        
-        tx = np.random.uniform(-8, 8)
-        ty = np.random.uniform(-8, 8)
-        M_trans = np.float32([[1, 0, tx], [0, 1, ty]])
-        shifted = cv2.warpAffine(rotated, M_trans, (128, 128), borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        
-        shifted = np.expand_dims(shifted, axis=-1)
-        aug_images.append(shifted)
-        
-    return aug_images
-
+# ---------------------------------------------------------
+# 2. DATASET PAIRING LOGIC
+# ---------------------------------------------------------
 def make_pairs(dataset_path):
     pairs, labels = [], []
-    people = [d for d in os.listdir(dataset_path) if os.path.isdir(os.path.join(dataset_path, d))]
-    person_data = {}
+    gen_dir = os.path.join(dataset_path, 'genuine')
+    forg_dir = os.path.join(dataset_path, 'forged')
     
-    for person in people:
-        gen_dir = os.path.join(dataset_path, person, 'genuine')
-        forg_dir = os.path.join(dataset_path, person, 'forged')
-        
-        gen_paths = [os.path.join(gen_dir, f) for f in os.listdir(gen_dir) if os.path.isfile(os.path.join(gen_dir, f))]
-        forg_paths = [os.path.join(forg_dir, f) for f in os.listdir(forg_dir) if os.path.isfile(os.path.join(forg_dir, f))]
-        
-        gen_imgs = []
-        for p in gen_paths:
-            img = preprocess_image(p)
-            if img is not None: gen_imgs.extend(augment_signature(img, 15))
-                
-        forg_imgs = []
-        for p in forg_paths:
-            img = preprocess_image(p)
-            if img is not None: forg_imgs.extend(augment_signature(img, 15))
-                
-        person_data[person] = {'genuine': gen_imgs, 'forged': forg_imgs}
+    authors = {}
 
-    # Match Pairs
-    for person, data in person_data.items():
-        gens = data['genuine']
+    print("Loading and preprocessing dataset (this may take a minute)...")
+    
+    if os.path.exists(gen_dir):
+        for f in os.listdir(gen_dir):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                # Try CEDAR format first (original_1_1.png)
+                parts = f.split('_')
+                author_id = parts[1] if len(parts) >= 3 else 'unknown'
+                
+                if author_id not in authors: authors[author_id] = {'gen': [], 'forg': []}
+                
+                img = preprocess_image(os.path.join(gen_dir, f))
+                if img is not None: authors[author_id]['gen'].append(img)
+                    
+    if os.path.exists(forg_dir):
+        for f in os.listdir(forg_dir):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                parts = f.split('_')
+                author_id = parts[1] if len(parts) >= 3 else 'unknown'
+                
+                if author_id in authors:
+                    img = preprocess_image(os.path.join(forg_dir, f))
+                    if img is not None: authors[author_id]['forg'].append(img)
+
+    for author, data in authors.items():
+        gens, forgs = data['gen'], data['forg']
+        
+        # Genuine-Genuine Matches
         for i in range(len(gens) - 1):
             pairs.append([gens[i], gens[i+1]])
-            labels.append(0)
-
-    # Intra-Person Forgeries
-    for person, data in person_data.items():
-        gens, forgs = data['genuine'], data['forged']
+            labels.append(1)
+            
+        # Genuine-Forged Hard Negatives
         for i in range(min(len(gens), len(forgs))):
             pairs.append([gens[i], forgs[i]])
-            labels.append(1)
-
-    # Inter-Person Differences
-    people_list = list(person_data.keys())
-    if len(people_list) > 1:
-        for p1, p2 in combinations(people_list, 2):
-            g1, g2 = person_data[p1]['genuine'], person_data[p2]['genuine']
-            for i in range(min(len(g1), len(g2))):
-                pairs.append([g1[i], g2[i]])
-                labels.append(1)
+            labels.append(0)
 
     temp = list(zip(pairs, labels))
     random.shuffle(temp)
-    pairs, labels = zip(*temp)
+    pairs, labels = zip(*temp) if temp else ([], [])
     return np.array(pairs), np.array(labels)
 
+# ---------------------------------------------------------
+# 3. TRAINING LOOP
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    dataset_folder = "custom_dataset"
+    # Make sure this points to the folder containing your CEDAR images!
+    dataset_folder = "dataset" 
+    
     if not os.path.exists(dataset_folder):
         print(f"Error: Folder '{dataset_folder}' not found.")
         exit()
         
-    print("Generating enriched pair dataset...")
     pairs, labels = make_pairs(dataset_folder)
     print(f"Generated {len(pairs)} total training pairs.")
     
+    if len(pairs) < 100:
+        print("WARNING: Dataset is way too small. Check your folder structure!")
+        exit()
+        
     img_a, img_b = pairs[:, 0], pairs[:, 1]
     
     siamese = build_siamese_network()
-    siamese.compile(loss=contrastive_loss, optimizer=tf.keras.optimizers.Adam(learning_rate=0.0003))
     
-    print("Starting Training (50 Epochs)...")
-    siamese.fit([img_a, img_b], labels, batch_size=16, epochs=50, validation_split=0.15)
+    siamese.compile(
+        loss=contrastive_loss, 
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001)
+    )
     
+    print("Starting Training from scratch...")
+    siamese.fit([img_a, img_b], labels, batch_size=16, epochs=30, validation_split=0.15)
+    
+    save_path = os.path.join('saved_model', 'siamese_model.weights.h5')
     os.makedirs('saved_model', exist_ok=True)
-    save_path = 'saved_model/siamese_model.weights.h5'
     siamese.save_weights(save_path)
-    print(f"Training Complete! Saved to: {save_path}")
+    print(f"Training Complete! Updated weights saved to: {save_path}")
