@@ -22,8 +22,17 @@ siamese = build_siamese_network()
 model_path = os.path.join('saved_model', 'siamese_model.weights.h5')
 
 if os.path.exists(model_path):
-    siamese.load_weights(model_path)
-    print(f"Loaded model weights from {model_path}")
+    try:
+        siamese.load_weights(model_path)
+        print(f"Loaded model weights from {model_path}")
+    except ValueError as e:
+        # This fires if model_path was saved from a different architecture
+        # (e.g. the pre-BatchNorm version of model.py). Predictions will be
+        # untrained/random until you retrain and re-save weights against
+        # the CURRENT model.py - but the app will still boot, which is
+        # useful for testing the EXIF/preprocessing pipeline in isolation.
+        print(f"Warning: could not load {model_path} - architecture mismatch "
+              f"with current model.py. Running with untrained weights.\n{e}")
 else:
     print(f"Warning: {model_path} not found. Ensure model is trained first.")
 
@@ -131,6 +140,66 @@ def crop_to_ink(img):
     return img
 
 
+def crop_and_center(img, canvas_size=256, ink_fill_ratio=0.8):
+    """
+    Tightly crops to ink, uniformly scales (aspect-preserving) so the ink's
+    larger dimension fills `ink_fill_ratio` of the canvas, then places it on
+    a canvas_size x canvas_size canvas centered on the ink's CENTROID
+    (center of mass) rather than the bounding-box center.
+
+    Why centroid and not bounding-box center: a bounding box gets pulled
+    off-center by any asymmetric stroke - e.g. a long underline flourish on
+    one signature but not the other. Two crops of the same name can end up
+    with their *letters* sitting in noticeably different spots even though
+    both boxes are individually "centered." Centering on center-of-mass
+    keeps the bulk of the ink (the actual letterforms) anchored to the same
+    canvas position across different samples, which is what makes two
+    signatures of the same name overlap closely in the diff heatmap and
+    gives the Siamese network a consistent, comparable input.
+
+    Used identically by preprocess_image() (model input) and
+    generate_diff_heatmap() (visualization) so what the model sees and what
+    the heatmap shows are the same alignment.
+
+    Expects ink = 255 (white), background = 0 (black).
+    """
+    cropped = crop_to_ink(img)
+    if cropped.size == 0:
+        return np.zeros((canvas_size, canvas_size), dtype=np.uint8)
+
+    h, w = cropped.shape
+    scale = (canvas_size * ink_fill_ratio) / max(h, w)
+    new_w, new_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+    resized = cv2.resize(cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # Center of mass of the ink pixels in the resized crop
+    moments = cv2.moments(resized, binaryImage=True)
+    if moments['m00'] > 0:
+        cx = moments['m10'] / moments['m00']
+        cy = moments['m01'] / moments['m00']
+    else:
+        cx, cy = new_w / 2.0, new_h / 2.0
+
+    canvas = np.zeros((canvas_size, canvas_size), dtype=np.uint8)
+
+    # Shift so (cx, cy) lands exactly at the canvas center
+    offset_x = int(round(canvas_size / 2.0 - cx))
+    offset_y = int(round(canvas_size / 2.0 - cy))
+
+    # Clip to the overlapping region so a large offset (very asymmetric
+    # ink) can never index outside the canvas or the source crop.
+    src_x0, src_y0 = max(0, -offset_x), max(0, -offset_y)
+    dst_x0, dst_y0 = max(0, offset_x), max(0, offset_y)
+    copy_w = min(new_w - src_x0, canvas_size - dst_x0)
+    copy_h = min(new_h - src_y0, canvas_size - dst_y0)
+
+    if copy_w > 0 and copy_h > 0:
+        canvas[dst_y0:dst_y0 + copy_h, dst_x0:dst_x0 + copy_w] = \
+            resized[src_y0:src_y0 + copy_h, src_x0:src_x0 + copy_w]
+
+    return canvas
+
+
 def preprocess_image(path):
     """
     Full pipeline to prepare uploaded image for Siamese Network inference:
@@ -163,26 +232,11 @@ def preprocess_image(path):
         if cv2.contourArea(cnt) < 25 or w < 3 or h < 3:
             cv2.drawContours(img, [cnt], -1, 0, -1)
 
-    # Crop tightly to signature ink
-    img = crop_to_ink(img)
-
-    if img.size == 0:
-        return np.zeros((1, 256, 256, 1), dtype="float32")
-
-    # Anti-Distortion Aspect Ratio Padding
-    h, w = img.shape
-    diff = abs(h - w)
-    if h > w:
-        pad_left = diff // 2
-        pad_right = diff - pad_left
-        img = cv2.copyMakeBorder(img, 0, 0, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
-    elif w > h:
-        pad_top = diff // 2
-        pad_bottom = diff - pad_top
-        img = cv2.copyMakeBorder(img, pad_top, pad_bottom, 0, 0, cv2.BORDER_CONSTANT, value=0)
-
-    # Resize to model input dimensions
-    img = cv2.resize(img, (256, 256), interpolation=cv2.INTER_AREA)
+    # Crop to ink, scale, and center on the ink's centroid so the letters
+    # themselves line up consistently across different signature samples
+    # (see crop_and_center docstring for why this replaces plain bbox
+    # crop + pad + resize).
+    img = crop_and_center(img, canvas_size=256, ink_fill_ratio=0.8)
 
     # Save debug image to static uploads for inspection
     debug_path = os.path.join(app.config['UPLOAD_FOLDER'], f"DEBUG_AI_{os.path.basename(path)}")
@@ -191,6 +245,48 @@ def preprocess_image(path):
     # Convert to normalized float32 tensor of shape (1, 256, 256, 1)
     img = img.astype("float32") / 255.0
     return np.expand_dims(np.expand_dims(img, axis=-1), axis=0)
+
+
+def align_via_phase_correlation(base, moving, max_shift=60):
+    """
+    Finds the (dx, dy) translation that best overlaps `moving` onto `base`
+    using phase correlation on the two ink masks, then returns a shifted
+    copy of `moving`.
+
+    crop_and_center() gets both signatures into roughly the same place via
+    centroid, but a heavy/asymmetric flourish (a long underline on one
+    sample but not the other) pulls the centroid away from the letters by
+    a different amount on each side - so the coarse centering alone isn't
+    exact. Phase correlation directly computes the shift that maximizes
+    cross-correlation between the two ink patterns, which is exactly what
+    "overlap the signatures" means mathematically. This is a refinement
+    pass on top of crop_and_center, not a replacement for it.
+
+    max_shift caps how far a correction is trusted (in pixels) - phase
+    correlation can return a large, spurious shift when two images share
+    very little ink in common (e.g. a near-empty crop), so a wild result
+    is clamped rather than applied outright.
+    """
+    base_f = base.astype(np.float32)
+    moving_f = moving.astype(np.float32)
+
+    if base_f.sum() == 0 or moving_f.sum() == 0:
+        return moving
+
+    try:
+        (dx, dy), _response = cv2.phaseCorrelate(base_f, moving_f)
+    except cv2.error:
+        return moving
+
+    dx = float(np.clip(dx, -max_shift, max_shift))
+    dy = float(np.clip(dy, -max_shift, max_shift))
+
+    shift_matrix = np.float32([[1, 0, dx], [0, 1, dy]])
+    aligned = cv2.warpAffine(
+        moving, shift_matrix, (moving.shape[1], moving.shape[0]),
+        flags=cv2.INTER_NEAREST, borderValue=0
+    )
+    return aligned
 
 
 # ---------------------------------------------------------
@@ -211,40 +307,22 @@ def generate_diff_heatmap(ref_path, test_path, output_path):
     raw_a = cv2.bitwise_not(raw_a)
     raw_b = cv2.bitwise_not(raw_b)
 
-    crop_a = crop_to_ink(raw_a)
-    crop_b = crop_to_ink(raw_b)
+    # Same centroid-centered crop/scale used for the model input, so the
+    # heatmap shows what the network is comparing - and so the two
+    # signatures' letters land in roughly the same place before refinement.
+    canvas_size = 256
+    sig_a = crop_and_center(raw_a, canvas_size=canvas_size, ink_fill_ratio=0.8)
+    sig_b = crop_and_center(raw_b, canvas_size=canvas_size, ink_fill_ratio=0.8)
 
-    if crop_a.size == 0 or crop_b.size == 0:
-        return
-
-    def resize_keep_aspect(image, target_h=256):
-        h, w = image.shape
-        if h == 0:
-            return image
-        aspect = w / h
-        target_w = max(1, int(target_h * aspect))
-        return cv2.resize(image, (target_w, target_h), interpolation=cv2.INTER_NEAREST)
-
-    sig_a = resize_keep_aspect(crop_a, target_h=256)
-    sig_b = resize_keep_aspect(crop_b, target_h=256)
-
-    max_w = max(sig_a.shape[1], sig_b.shape[1])
-
-    def pad_to_width(image, target_w):
-        h, w = image.shape
-        if w < target_w:
-            pad_left = (target_w - w) // 2
-            pad_right = target_w - w - pad_left
-            return cv2.copyMakeBorder(image, 0, 0, pad_left, pad_right, cv2.BORDER_CONSTANT, value=0)
-        return image
-
-    sig_a = pad_to_width(sig_a, max_w)
-    sig_b = pad_to_width(sig_b, max_w)
+    # Refine the coarse centroid alignment into the tightest possible pixel
+    # overlap. sig_a (reference) is treated as the fixed anchor; sig_b
+    # (test) is the one that gets shifted onto it.
+    sig_b = align_via_phase_correlation(sig_a, sig_b)
 
     overlap = cv2.bitwise_and(sig_a, sig_b)
     diff = cv2.absdiff(sig_a, sig_b)
 
-    xai_map = np.zeros((256, max_w, 3), dtype=np.uint8)
+    xai_map = np.zeros((canvas_size, canvas_size, 3), dtype=np.uint8)
     xai_map[overlap > 0] = [80, 240, 100]  # Green for matching strokes
     xai_map[diff > 0] = [50, 50, 255]      # Red for divergent strokes
 
