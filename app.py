@@ -4,11 +4,14 @@ import time
 import uuid
 import base64
 import numpy as np
-from PIL import Image, ImageOps
 from flask import Flask, render_template, request, redirect, url_for
 from werkzeug.utils import secure_filename
 import tensorflow as tf
 from model import build_siamese_network, contrastive_loss
+from preprocessing import (
+    load_and_standardize, crop_and_center, clean_ink_mask,
+    preprocess_for_model
+)
 
 app = Flask(__name__)
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
@@ -37,206 +40,19 @@ else:
     print(f"Warning: {model_path} not found. Ensure model is trained first.")
 
 # ---------------------------------------------------------
-# 2. EXIF-SAFE IMAGE READING
+# 2. IMAGE PREPROCESSING (shared with train.py via preprocessing.py)
 # ---------------------------------------------------------
-def read_image_exif_safe(path):
-    """
-    Reads an image the way a human (and a browser <img> tag) sees it.
-
-    cv2.imread() ignores the EXIF Orientation tag entirely, so a portrait
-    phone photo stored with Orientation=6/8/3 comes in still rotated on
-    its side even though the frontend displays it upright. This function
-    opens the file with Pillow, physically bakes the EXIF rotation into
-    the pixel data with ImageOps.exif_transpose(), and only then converts
-    to a numpy array in the channel order OpenCV expects.
-
-    Returns a numpy array: grayscale (H,W), BGR (H,W,3), or BGRA (H,W,4) -
-    same shape conventions load_and_standardize() already handles.
-    """
-    pil_img = Image.open(path)
-
-    # This is the actual fix: rotates/flips pixel data according to the
-    # EXIF Orientation tag, then strips the tag so nothing downstream
-    # (cv2, browsers, debug image writes) can double-apply it.
-    pil_img = ImageOps.exif_transpose(pil_img)
-
-    mode = pil_img.mode
-    if mode == 'RGBA':
-        arr = np.array(pil_img)
-        return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
-    elif mode == 'RGB':
-        arr = np.array(pil_img)
-        return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-    elif mode in ('L', 'LA', '1'):
-        gray = pil_img.convert('L')
-        return np.array(gray)
-    else:
-        # P (palette), CMYK, etc. - normalize to RGB first
-        arr = np.array(pil_img.convert('RGB'))
-        return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-
-
-# ---------------------------------------------------------
-# 3. IMAGE PREPROCESSING PIPELINE
-# ---------------------------------------------------------
-def load_and_standardize(path):
-    """
-    Reads input image (canvas drawing, scanned doc, or phone camera photo),
-    applies EXIF-safe orientation correction, removes shadows/lighting
-    gradients, and binarizes to pure black ink on white background.
-    """
-    img = read_image_exif_safe(path)
-    if img is None:
-        return None
-
-    # Handle transparent digital canvas signatures (RGBA)
-    if len(img.shape) == 3 and img.shape[2] == 4:
-        alpha = img[:, :, 3]
-        binary = np.ones(alpha.shape, dtype=np.uint8) * 255
-        binary[alpha > 0] = 0
-        return binary
-
-    # Convert BGR to Grayscale
-    if len(img.shape) == 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img
-
-    # Invert if dark background with light ink
-    if np.median(gray) < 127:
-        gray = cv2.bitwise_not(gray)
-
-    # Illumination Normalization (Shadow Removal via Gaussian division)
-    bg_map = cv2.GaussianBlur(gray, (75, 75), 0)
-    bg_map = np.clip(bg_map, 1, 255)
-    normalized = cv2.divide(gray, bg_map, scale=255)
-
-    # Otsu Binarization (Strict White Background, Black Ink)
-    _, binary = cv2.threshold(normalized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return binary
-
-
-def crop_to_ink(img):
-    """
-    Tightly crops around all valid ink strokes, ignoring tiny isolated specks.
-    Expects ink = 255 (white), background = 0 (black).
-
-    Deliberately axis-aligned only (cv2.boundingRect on findNonZero).
-    NOTE: do NOT replace this with cv2.minAreaRect-based deskewing - its
-    returned angle has an inherent 90/180-degree ambiguity for near-square
-    or symmetric ink blobs, which is what was flipping signatures before.
-    Now that EXIF rotation is corrected at read time, remaining skew is
-    just natural handwriting slant, which the network should learn to
-    handle from the CEDAR training distribution rather than have it
-    "corrected" away geometrically.
-    """
-    coords = cv2.findNonZero(img)
-    if coords is None:
-        return img
-
-    x, y, w, h = cv2.boundingRect(coords)
-    if w > 10 and h > 10:
-        return img[y:y+h, x:x+w]
-    return img
-
-
-def crop_and_center(img, canvas_size=256, ink_fill_ratio=0.8):
-    """
-    Tightly crops to ink, uniformly scales (aspect-preserving) so the ink's
-    larger dimension fills `ink_fill_ratio` of the canvas, then places it on
-    a canvas_size x canvas_size canvas centered on the ink's CENTROID
-    (center of mass) rather than the bounding-box center.
-
-    Why centroid and not bounding-box center: a bounding box gets pulled
-    off-center by any asymmetric stroke - e.g. a long underline flourish on
-    one signature but not the other. Two crops of the same name can end up
-    with their *letters* sitting in noticeably different spots even though
-    both boxes are individually "centered." Centering on center-of-mass
-    keeps the bulk of the ink (the actual letterforms) anchored to the same
-    canvas position across different samples, which is what makes two
-    signatures of the same name overlap closely in the diff heatmap and
-    gives the Siamese network a consistent, comparable input.
-
-    Used identically by preprocess_image() (model input) and
-    generate_diff_heatmap() (visualization) so what the model sees and what
-    the heatmap shows are the same alignment.
-
-    Expects ink = 255 (white), background = 0 (black).
-    """
-    cropped = crop_to_ink(img)
-    if cropped.size == 0:
-        return np.zeros((canvas_size, canvas_size), dtype=np.uint8)
-
-    h, w = cropped.shape
-    scale = (canvas_size * ink_fill_ratio) / max(h, w)
-    new_w, new_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-    resized = cv2.resize(cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    # Center of mass of the ink pixels in the resized crop
-    moments = cv2.moments(resized, binaryImage=True)
-    if moments['m00'] > 0:
-        cx = moments['m10'] / moments['m00']
-        cy = moments['m01'] / moments['m00']
-    else:
-        cx, cy = new_w / 2.0, new_h / 2.0
-
-    canvas = np.zeros((canvas_size, canvas_size), dtype=np.uint8)
-
-    # Shift so (cx, cy) lands exactly at the canvas center
-    offset_x = int(round(canvas_size / 2.0 - cx))
-    offset_y = int(round(canvas_size / 2.0 - cy))
-
-    # Clip to the overlapping region so a large offset (very asymmetric
-    # ink) can never index outside the canvas or the source crop.
-    src_x0, src_y0 = max(0, -offset_x), max(0, -offset_y)
-    dst_x0, dst_y0 = max(0, offset_x), max(0, offset_y)
-    copy_w = min(new_w - src_x0, canvas_size - dst_x0)
-    copy_h = min(new_h - src_y0, canvas_size - dst_y0)
-
-    if copy_w > 0 and copy_h > 0:
-        canvas[dst_y0:dst_y0 + copy_h, dst_x0:dst_x0 + copy_w] = \
-            resized[src_y0:src_y0 + copy_h, src_x0:src_x0 + copy_w]
-
-    return canvas
-
-
 def preprocess_image(path):
     """
-    Full pipeline to prepare uploaded image for Siamese Network inference:
-    1. EXIF-safe read + binarize & remove background shadows
-    2. Invert (ink=255, bg=0)
-    3. Wipe outer edge shadows
-    4. Remove noise contours
-    5. Crop tightly around ink (axis-aligned, orientation preserved)
-    6. Pad to square ratio & resize to 256x256
-    7. Normalize to [0.0, 1.0] float32 tensor
+    Prepares an uploaded image for Siamese Network inference. Delegates
+    the actual image processing to preprocessing.preprocess_for_model()
+    (shared with train.py) and adds the two things that are specific to
+    inference: writing a debug snapshot, and shaping the tensor with a
+    batch dimension for model.predict().
     """
-    img = load_and_standardize(path)
+    img = preprocess_for_model(path, canvas_size=256)
     if img is None:
         return None
-
-    # Invert for geometric operations: Ink = 255 (white), Background = 0 (black)
-    img = cv2.bitwise_not(img)
-
-    # Outer border shadow wipe
-    border = 10
-    img[:border, :] = 0
-    img[-border:, :] = 0
-    img[:, :border] = 0
-    img[:, -border:] = 0
-
-    # Noise filter: remove isolated tiny specks
-    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        if cv2.contourArea(cnt) < 25 or w < 3 or h < 3:
-            cv2.drawContours(img, [cnt], -1, 0, -1)
-
-    # Crop to ink, scale, and center on the ink's centroid so the letters
-    # themselves line up consistently across different signature samples
-    # (see crop_and_center docstring for why this replaces plain bbox
-    # crop + pad + resize).
-    img = crop_and_center(img, canvas_size=256, ink_fill_ratio=0.8)
 
     # Save debug image to static uploads for inspection
     debug_path = os.path.join(app.config['UPLOAD_FOLDER'], f"DEBUG_AI_{os.path.basename(path)}")
@@ -306,6 +122,11 @@ def generate_diff_heatmap(ref_path, test_path, output_path):
 
     raw_a = cv2.bitwise_not(raw_a)
     raw_b = cv2.bitwise_not(raw_b)
+
+    # Same noise cleanup used by preprocess_image, so the heatmap shows
+    # exactly what the model is scoring - not a torn-edge-corrupted crop.
+    raw_a = clean_ink_mask(raw_a)
+    raw_b = clean_ink_mask(raw_b)
 
     # Same centroid-centered crop/scale used for the model input, so the
     # heatmap shows what the network is comparing - and so the two
