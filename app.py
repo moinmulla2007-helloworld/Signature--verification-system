@@ -226,8 +226,12 @@ def verify():
     # 4. Predict Distance
     distance = float(siamese.predict([img_a, img_b])[0][0])
 
-    # 5. Strict 0.20 Threshold Comparison
-    threshold = 0.20
+    # 5. Threshold Comparison
+    # NOTE: 0.30 is stricter than the one confirmed genuine-pair reading
+    # observed during testing (0.3578) - that pair would still be flagged
+    # as a forgery at this threshold. If genuine signatures keep getting
+    # rejected, this is the first place to look.
+    threshold = 0.30
     is_match = distance < threshold
     similarity = max(0.0, min(100.0, (1.0 - (distance / (threshold * 1.5))) * 100))
 
@@ -239,6 +243,7 @@ def verify():
         match=is_match,
         distance=round(distance, 4),
         similarity=round(similarity, 1),
+        threshold=threshold,
         ref_filename=ref_filename,
         test_filename=test_filename,
         heatmap_filename=heatmap_filename,
