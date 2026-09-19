@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Comparison result — SignaVerify{% endblock %}
+
+{% block nav_cta %}
+<a href="{{ url_for('index') }}#tool" class="nav-cta">
+  <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+  Compare another pair
+</a>
+{% endblock %}
+
+{% block styles %}
+<style>
+  /* Status banner */
+  .result-banner{
+    display:flex; align-items:center; gap:var(--s-3);
+    padding:var(--s-3) var(--s-4);
+    background:var(--paper-raised);
+    border:1px solid var(--line); border-left:3px solid var(--line-strong);
+    border-radius:var(--radius-md);
+    box-shadow:var(--shadow-card);
+    margin-bottom:var(--s-4);
+  }
+  .result-banner.is-genuine{ border-left-color:var(--match); }
+  .result-banner.is-inconclusive{ border-left-color:var(--amber); }
+  .result-banner.is-different{ border-left-color:var(--seal); }
+
+  .result-icon{
+    width:48px; height:48px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .result-icon .icon{ width:22px; height:22px; }
+  .is-genuine .result-icon{ background:var(--match-soft); color:var(--match); }
+  .is-inconclusive .result-icon{ background:var(--amber-soft); color:var(--amber); }
+  .is-different .result-icon{ background:var(--seal-soft); color:var(--seal); }
+
+  .result-text h2{
+    font-family:var(--font-display); font-weight:500; font-size:20px;
+    letter-spacing:-0.01em; margin-bottom:2px;
+  }
+  .is-genuine .result-text h2{ color:var(--match); }
+  .is-inconclusive .result-text h2{ color:var(--amber); }
+  .is-different .result-text h2{ color:var(--seal); }
+  .result-text p{ font-size:14px; color:var(--ink-500); }
+
+  @media (max-width:640px){ .result-banner{ flex-direction:column; text-align:center; } }
+
+  .notice{
+    background:var(--amber-soft); color:var(--amber);
+    border:1px solid #e5d3a9; border-radius:var(--radius-md);
+    padding:var(--s-2) var(--s-3);
+    font-size:14px; font-weight:500;
+    margin-bottom:var(--s-4);
+  }
+
+  /* Metrics */
+  .metrics-grid{ display:grid; grid-template-columns:1fr 1fr; gap:var(--s-4); margin-bottom:var(--s-4); }
+  @media (max-width:800px){ .metrics-grid{ grid-template-columns:1fr; } }
+
+  .metric-card{
+    background:var(--paper-raised); border:1px solid var(--line);
+    border-radius:var(--radius-md); padding:var(--s-4);
+    box-shadow:var(--shadow-card);
+  }
+  .metric-header{ display:flex; align-items:center; gap:var(--s-2); margin-bottom:var(--s-3); }
+  .metric-header .icon{ color:var(--ink-500); width:18px; height:18px; }
+  .metric-title{
+    font-family:var(--font-mono); font-size:11px;
+    letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-500);
+  }
+  .metric-value{
+    font-family:var(--font-mono); font-weight:500; font-size:40px;
+    color:var(--ink-900); line-height:1;
+  }
+  .metric-footnote{
+    display:flex; align-items:flex-start; gap:6px;
+    font-size:13px; color:var(--ink-500); margin-top:var(--s-2);
+  }
+  .metric-footnote .icon{ margin-top:3px; }
+  .ring-note{ text-align:center; justify-content:center; margin-top:var(--s-3); }
+
+  /* Ring */
+  .ring-wrap{ position:relative; width:180px; height:180px; margin:0 auto; }
+  .ring-chart{ width:100%; height:100%; transform:rotate(-90deg); }
+  .ring-chart circle{ fill:none; stroke-width:8; stroke-linecap:round; }
+  .ring-bg{ stroke:var(--line); }
+  .ring-fill{
+    stroke-dasharray:251.33;
+    stroke-dashoffset:calc(251.33 - (251.33 * var(--percent) / 100));
+    transition:stroke-dashoffset 1.2s var(--ease);
+  }
+  .is-genuine .ring-fill{ stroke:var(--match); }
+  .is-inconclusive .ring-fill{ stroke:var(--amber); }
+  .is-different .ring-fill{ stroke:var(--seal); }
+  .ring-value{
+    position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+    font-family:var(--font-mono); font-weight:500; font-size:28px; color:var(--ink-900);
+  }
+
+  /* Distance scale */
+  .scale{ margin-top:var(--s-3); }
+  .scale-track{
+    position:relative; display:flex; height:10px;
+    border-radius:var(--radius-pill); overflow:hidden;
+    background:var(--line);
+  }
+  .seg{ display:block; height:100%; flex-grow:0; flex-shrink:0; }
+  .seg-genuine{ background:var(--match-soft); box-shadow:inset 0 0 0 1px #c5dccd; }
+  .seg-inconclusive{ background:var(--amber-soft); box-shadow:inset 0 0 0 1px #e5d3a9; }
+  .seg-different{ background:var(--seal-soft); box-shadow:inset 0 0 0 1px #e3c5c1; }
+  .scale-wrap{ position:relative; }
+  .scale-marker{
+    position:absolute; top:-4px; width:4px; height:18px;
+    background:var(--ink-900); border-radius:2px;
+    transform:translateX(-50%);
+  }
+  .scale-labels{
+    display:flex; justify-content:space-between;
+    margin-top:var(--s-1);
+    font-size:12px; color:var(--ink-500);
+  }
+
+  /* Comparison images */
+  .comparison-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr);
+    gap:var(--s-4); margin-bottom:var(--s-4);
+  }
+  @media (max-width:800px){ .comparison-grid{ grid-template-columns:1fr; } }
+
+  .comparison-card{
+    background:var(--paper-raised); border:1px solid var(--line);
+    border-radius:var(--radius-md); overflow:hidden;
+    box-shadow:var(--shadow-card);
+    display:flex; flex-direction:column;
+  }
+  .comparison-card.accent-seal{ border-top:2px solid var(--seal); }
+  .comparison-card.accent-teal{ border-top:2px solid var(--teal); }
+
+  .card-tag{
+    display:flex; align-items:center; gap:8px;
+    padding:var(--s-2) var(--s-3);
+    border-bottom:1px solid var(--line);
+    font-family:var(--font-mono); font-size:11px; font-weight:500;
+    letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-700);
+  }
+  .card-tag .icon{ width:14px; height:14px; }
+
+  .image-wrapper{
+    flex:1 1 auto; min-height:200px; padding:var(--s-3);
+    display:flex; align-items:center; justify-content:center;
+    background:var(--paper);
+  }
+  .image-wrapper img{ max-width:100%; max-height:240px; object-fit:contain; border-radius:var(--radius-sm); }
+  .image-missing{ font-size:13px; color:var(--ink-500); text-align:center; }
+
+  .legend{
+    list-style:none; display:flex; flex-wrap:wrap; gap:6px var(--s-2);
+    padding:var(--s-2) var(--s-3);
+    border-top:1px solid var(--line);
+    font-size:12px; color:var(--ink-700);
+  }
+  .legend li{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; }
+  .swatch-match{ background:var(--ink-700); }
+  .swatch-ref{ background:var(--seal); }
+  .swatch-test{ background:var(--sample); }
+
+  .disclaimer{
+    text-align:center; font-size:13px; color:var(--ink-500);
+    max-width:560px; margin:0 auto var(--s-4);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+    <section class="page-section">
+      <div class="container">
+
+        <div class="page-head">
+          <p class="eyebrow">Verification result</p>
+          <h1>Comparison result</h1>
+          <p>How close the test signature is to the reference.</p>
+        </div>
+
+        {% if untrained %}
+        <div class="notice" role="alert">
+          The model weights weren't found, so this score comes from an untrained network and means nothing.
+        </div>
+        {% endif %}
+
+        <!-- Status -->
+        <div class="result-banner is-{{ verdict }}">
+          <div class="result-icon">
+            {% if verdict == 'genuine' %}
+            <svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>
+            {% elif verdict == 'inconclusive' %}
+            <svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>
+            {% else %}
+            <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+            {% endif %}
+          </div>
+          <div class="result-text">
+            <h2>{{ status }}</h2>
+            <p>{{ detail }}</p>
+          </div>
+        </div>
+
+        <!-- Metrics -->
+        <div class="metrics-grid is-{{ verdict }}">
+          <div class="metric-card">
+            <div class="metric-header">
+              <svg class="icon" aria-hidden="true"><use href="#i-target"/></svg>
+              <span class="metric-title">Similarity score</span>
+            </div>
+            <div class="ring-wrap" id="ring" role="img"
+                 aria-label="Similarity score {{ similarity }} percent. 50 percent is the decision threshold.">
+              <svg class="ring-chart" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="ring-bg" cx="50" cy="50" r="40"></circle>
+                <circle class="ring-fill" id="ringFill" cx="50" cy="50" r="40" style="--percent: {{ similarity }};" data-percent="{{ similarity }}"></circle>
+              </svg>
+              <div class="ring-value" aria-hidden="true">{{ similarity }}%</div>
+            </div>
+            <p class="metric-footnote ring-note">Not a probability. 50% marks the decision threshold.</p>
+          </div>
+
+          <div class="metric-card">
+            <div class="metric-header">
+              <svg class="icon" aria-hidden="true"><use href="#i-ruler"/></svg>
+              <span class="metric-title">Euclidean distance</span>
+            </div>
+            <span class="metric-value">{{ distance }}</span>
+
+            <div class="scale" role="img"
+                 aria-label="Distance {{ distance }}. Below {{ lower }} is likely genuine, above {{ upper }} is likely different, in between is inconclusive.">
+              <div class="scale-wrap">
+                <div class="scale-track">
+                  <span class="seg seg-genuine" style="flex-basis: {{ band_genuine_pct }}%"></span>
+                  <span class="seg seg-inconclusive" style="flex-basis: {{ (band_different_pct - band_genuine_pct)|round(1) }}%"></span>
+                  <span class="seg seg-different" style="flex-basis: {{ (100 - band_different_pct)|round(1) }}%"></span>
+                </div>
+                <span class="scale-marker" style="left: {{ (100 - similarity)|round(1) }}%"></span>
+              </div>
+              <div class="scale-labels" aria-hidden="true">
+                <span>Closer</span>
+                <span>Further apart</span>
+              </div>
+            </div>
+
+            <p class="metric-footnote">
+              <svg class="icon" aria-hidden="true"><use href="#i-help"/></svg>
+              <span>Decision threshold {{ threshold }}. Likely genuine below {{ lower }}, likely different above {{ upper }}.</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Comparison -->
+        <div class="comparison-grid">
+          <div class="comparison-card accent-seal">
+            <div class="card-tag">
+              <svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>
+              Reference
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ ref_src }}" alt="Reference signature used for comparison">
+            </div>
+          </div>
+
+          <div class="comparison-card accent-teal">
+            <div class="card-tag">
+              <svg class="icon" aria-hidden="true"><use href="#i-sample"/></svg>
+              Test sample
+            </div>
+            <div class="image-wrapper">
+              <img src="{{ test_src }}" alt="Test signature submitted for verification">
+            </div>
+          </div>
+
+          <div class="comparison-card">
+            <div class="card-tag">
+              <svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>
+              Difference map
+            </div>
+            <div class="image-wrapper">
+              {% if heatmap_src %}
+              <img src="{{ heatmap_src }}" alt="Difference map of the two aligned signatures. Dark grey strokes appear in both, red strokes only in the reference, blue strokes only in the test sample.">
+              {% else %}
+              <p class="image-missing">The difference map couldn't be created for this pair.</p>
+              {% endif %}
+            </div>
+            {% if heatmap_src %}
+            <ul class="legend" aria-label="Difference map legend">
+              <li><span class="swatch swatch-match"></span>In both</li>
+              <li><span class="swatch swatch-ref"></span>Only in reference</li>
+              <li><span class="swatch swatch-test"></span>Only in test sample</li>
+            </ul>
+            {% endif %}
+          </div>
+        </div>
+
+        <p class="disclaimer">This is an automated similarity check for screening. It is not a legal or forensic determination of authenticity.</p>
+
+        <div class="action-section">
+          <a href="{{ url_for('index') }}#tool" class="btn-secondary">
+            <svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>
+            Compare another pair
+          </a>
+        </div>
+
+      </div>
+    </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Animate the ring from empty to its value. Without JS it simply renders
+  // at the final value (set inline above).
+  (function () {
+    var fill = document.getElementById('ringFill');
+    if (!fill) return;
+    var target = fill.getAttribute('data-percent') || '0';
+    fill.style.setProperty('--percent', '0');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { fill.style.setProperty('--percent', target); });
+    });
+  })();
+</script>
+{% endblock %}
