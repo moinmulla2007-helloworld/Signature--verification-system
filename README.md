@@ -237,29 +237,6 @@ The similarity percentage displayed by the application is scaled around the deci
 
 ---
 
-## 📊 Evaluation
-
-Evaluation should be performed on writers/signatures that were **not used during training**.
-
-| Metric                     | Value         |
-| -------------------------- | ------------- |
-| Dataset / Split            | *To be added* |
-| AUC                        | *To be added* |
-| EER                        | *To be added* |
-| FAR at chosen threshold    | *To be added* |
-| FRR at chosen threshold    | *To be added* |
-| Chosen threshold           | *To be added* |
-| Threshold selection method | *To be added* |
-
-For a more realistic evaluation, results should also be tested on datasets different from CEDAR, such as:
-
-* BHSig260
-* GPDS
-
-Testing with **real smartphone photographs** is also recommended because results obtained exclusively from CEDAR may not represent real-world performance.
-
----
-
 ## 🚀 Getting Started
 
 ### 1. Clone the Repository
