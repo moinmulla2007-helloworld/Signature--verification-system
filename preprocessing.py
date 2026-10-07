@@ -212,3 +212,49 @@ def preprocess_for_model(path, canvas_size=256):
     img = clean_ink_mask(img)
     img = crop_and_center(img, canvas_size=canvas_size, ink_fill_ratio=0.8)
     return img
+
+def check_signature_likeness(path, max_ink_ratio=0.25, min_ink_ratio=0.002,
+                             max_colorful_ratio=0.20, max_components=150):
+    """
+    Heuristic gate: does this image look like a signature (thin dark/blue
+    strokes on a mostly plain background) rather than a photo, logo or poster?
+
+    Without this, load_and_standardize() Otsu-binarizes ANY image into a blob
+    of "ink" and the model happily returns a distance for it.
+
+    Returns (ok: bool, reason: str). `reason` is a short machine tag:
+    'ok', 'unreadable', 'too_much_ink', 'too_little_ink', 'colorful',
+    'too_many_shapes'.
+    """
+    raw = read_image_exif_safe(path)
+    if raw is None:
+        return False, 'unreadable'
+
+    # 1. Colourfulness: a signature is ink on paper, so only the (few) ink
+    #    pixels can be strongly coloured. Photos/posters are saturated broadly.
+    if raw.ndim == 3:
+        bgr = raw[:, :, :3]
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        colorful = (hsv[:, :, 1] > 90) & (hsv[:, :, 2] > 40)
+        if colorful.mean() > max_colorful_ratio:
+            return False, 'colorful'
+
+    # 2. Ink coverage after the same binarization the model sees.
+    binary = load_and_standardize(path)
+    if binary is None:
+        return False, 'unreadable'
+    ink = cv2.bitwise_not(binary)
+    ratio = np.count_nonzero(ink) / ink.size
+    if ratio > max_ink_ratio:
+        return False, 'too_much_ink'
+    if ratio < min_ink_ratio:
+        return False, 'too_little_ink'
+
+    # 3. Shape count: handwriting is a handful of strokes; textures, foliage,
+    #    photos and printed text blocks shatter into many components.
+    cleaned = clean_ink_mask(ink)
+    n_labels, _ = cv2.connectedComponents(cleaned)
+    if n_labels - 1 > max_components:
+        return False, 'too_many_shapes'
+
+    return True, 'ok'

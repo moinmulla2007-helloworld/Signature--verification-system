@@ -34,7 +34,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from model import build_siamese_network
 from preprocessing import (
     load_and_standardize, crop_and_center, clean_ink_mask,
-    preprocess_for_model,
+    preprocess_for_model, check_signature_likeness,
 )
 
 # ---------------------------------------------------------
@@ -229,6 +229,10 @@ def classify(distance, threshold):
     return 'inconclusive'
 
 
+NOT_SIGNATURE_TEXT = (
+    "The {label} image doesn't look like a signature. Upload a scan or photo "
+    "of handwriting on a plain background, or draw one instead.")
+
 VERDICT_TEXT = {
     'genuine': (
         'Likely genuine',
@@ -399,6 +403,14 @@ def verify():
             test_path = os.path.join(tmp, 'test.png')
             ref_img.save(ref_path, compress_level=1)
             test_img.save(test_path, compress_level=1)
+
+            # Reject photos/posters/etc. BEFORE the model sees them - the
+            # preprocessing binarizes anything into "ink", so without this
+            # gate any two images get a distance score.
+            for path, label in ((ref_path, 'reference'), (test_path, 'test')):
+                ok, reason = check_signature_likeness(path)
+                if not ok:
+                    return render_error(NOT_SIGNATURE_TEXT.format(label=label), 422)
 
             img_a = preprocess_image(ref_path)
             img_b = preprocess_image(test_path)
